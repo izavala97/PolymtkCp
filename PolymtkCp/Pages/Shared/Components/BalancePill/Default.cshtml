@@ -1,0 +1,22 @@
+@model PolymtkCp.Components.BalancePillViewComponent.BalancePillVm
+
+@if (Model.WalletAddress is null)
+{
+    <a class="nav-link text-muted small" asp-page="/Account/Profile" title="Set your Polymarket wallet">
+        Connect wallet
+    </a>
+}
+else if (Model.Failed)
+{
+    <a class="nav-link text-warning small" asp-page="/Account/Profile" title="Could not reach Polymarket or Polygon RPC">
+        — Portfolio
+    </a>
+}
+else
+{
+    <a class="nav-link text-dark" asp-page="/Account/Profile"
+       title="Cash: $@(Model.Cash?.ToString("N2") ?? "—") · Positions: $@(Model.Positions?.ToString("N2") ?? "—")&#10;Wallet: @Model.WalletAddress">
+        <span class="fw-semibold">$@(Model.Portfolio?.ToString("N2") ?? "—")</span>
+        <span class="text-muted small">Portfolio</span>
+    </a>
+}

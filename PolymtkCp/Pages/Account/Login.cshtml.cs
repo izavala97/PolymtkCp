@@ -54,6 +54,8 @@ public class LoginModel : PageModel
             {
                 new(ClaimTypes.NameIdentifier, session.User.Id ?? string.Empty),
                 new(ClaimTypes.Email, session.User.Email ?? string.Empty),
+                new("supabase:access_token", session.AccessToken ?? string.Empty),
+                new("supabase:refresh_token", session.RefreshToken ?? string.Empty),
             };
 
             var identity = new ClaimsIdentity(claims, "Cookies");

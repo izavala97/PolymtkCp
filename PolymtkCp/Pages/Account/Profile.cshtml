@@ -1,0 +1,118 @@
+@page
+@model PolymtkCp.Pages.Account.ProfileModel
+@{
+    ViewData["Title"] = "Profile";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <h2 class="mb-4">Your profile</h2>
+
+        @if (Model.WalletRequired)
+        {
+            <div class="alert alert-warning">
+                <strong>Connect your Polymarket wallet</strong> to use the rest of the app.
+                Your balance and copy-trades depend on it.
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(Model.StatusMessage))
+        {
+            <div class="alert alert-success">@Model.StatusMessage</div>
+        }
+        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+        {
+            <div class="alert alert-danger">@Model.ErrorMessage</div>
+        }
+
+        <dl class="row">
+            <dt class="col-sm-3">Email</dt>
+            <dd class="col-sm-9">@Model.Email</dd>
+
+            <dt class="col-sm-3">Polymarket wallet</dt>
+            <dd class="col-sm-9">
+                @if (string.IsNullOrEmpty(Model.CurrentWallet))
+                {
+                    <span class="text-muted">Not connected</span>
+                }
+                else
+                {
+                    <code>@Model.CurrentWallet</code>
+                }
+            </dd>
+
+            <dt class="col-sm-3">Portfolio</dt>
+            <dd class="col-sm-9">
+                @if (Model.PortfolioTotal is { } total)
+                {
+                    <span class="fw-semibold">$@total.ToString("N2")</span>
+                    <span class="text-muted small">USDC</span>
+                }
+                else
+                {
+                    <span class="text-muted">—</span>
+                }
+            </dd>
+
+            <dt class="col-sm-3">Cash</dt>
+            <dd class="col-sm-9">
+                @if (Model.CashUsdc is { } c)
+                {
+                    <span>$@c.ToString("N2")</span>
+                    <span class="text-muted small">USDC.e on Polygon</span>
+                }
+                else
+                {
+                    <span class="text-muted">—</span>
+                }
+            </dd>
+
+            <dt class="col-sm-3">Positions value</dt>
+            <dd class="col-sm-9">
+                @if (Model.PositionsValue is { } v)
+                {
+                    <span>$@v.ToString("N2")</span>
+                    <span class="text-muted small">market value of open positions</span>
+                }
+                else
+                {
+                    <span class="text-muted">—</span>
+                }
+            </dd>
+        </dl>
+
+        <hr />
+
+        <h5 class="mb-3">@(string.IsNullOrEmpty(Model.CurrentWallet) ? "Connect your Polymarket wallet" : "Update wallet")</h5>
+
+        <form method="post">
+            <div class="mb-3">
+                <label asp-for="WalletInputText" class="form-label"></label>
+                <input asp-for="WalletInputText" class="form-control"
+                       placeholder="0x... or https://polymarket.com/profile/0x..." />
+                <span asp-validation-for="WalletInputText" class="text-danger small"></span>
+                <div class="form-text">Read-only. We show your portfolio (cash + positions). Cash comes from the on-chain USDC.e balance of this wallet on Polygon; positions value comes from Polymarket's public Data API. No keys are ever stored.</div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+                @if (!string.IsNullOrEmpty(Model.CurrentWallet))
+                {
+                    <button type="submit" asp-page-handler="Disconnect"
+                            class="btn btn-outline-danger"
+                            onclick="return confirm('Disconnect your wallet?');">
+                        Disconnect
+                    </button>
+                }
+            </div>
+        </form>
+
+        <div class="alert alert-secondary mt-4 small mb-0">
+            <strong>API key:</strong> not collected in this phase. Trade execution is disabled.
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

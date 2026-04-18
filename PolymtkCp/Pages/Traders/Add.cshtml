@@ -1,0 +1,125 @@
+@page
+@model PolymtkCp.Pages.Traders.AddModel
+@{
+    ViewData["Title"] = "Add trader";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <h2 class="mb-4">Copy a new trader</h2>
+
+        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+        {
+            <div class="alert alert-danger">@Model.ErrorMessage</div>
+        }
+
+        <form method="post">
+            <fieldset class="mb-4">
+                <legend class="h5">Trader</legend>
+
+                <div class="mb-3">
+                    <label asp-for="WalletInputText" class="form-label">Wallet address or Polymarket profile URL</label>
+                    <input asp-for="WalletInputText" class="form-control"
+                           placeholder="0x... or https://polymarket.com/profile/0x..." />
+                    <span asp-validation-for="WalletInputText" class="text-danger small"></span>
+                    <div class="form-text">
+                        Find this on the trader's Polymarket profile (the address shown under their avatar).
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Nickname" class="form-label">Nickname (optional)</label>
+                    <input asp-for="Nickname" class="form-control" placeholder="e.g. Smart Money" />
+                    <div class="form-text">Shared display name. Used by everyone copying this trader.</div>
+                </div>
+            </fieldset>
+
+            <fieldset class="mb-4">
+                <legend class="h5">Sizing</legend>
+
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" asp-for="SizingMode" value="fixed" id="sizingFixed" />
+                        <label class="form-check-label" for="sizingFixed">Fixed amount per trade</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" asp-for="SizingMode" value="percent" id="sizingPercent" />
+                        <label class="form-check-label" for="sizingPercent">Percentage of trader's notional</label>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3" data-sizing-field="fixed">
+                        <label asp-for="FixedAmountUsd" class="form-label">Fixed amount (USDC)</label>
+                        <input asp-for="FixedAmountUsd" type="number" step="0.01" min="0" class="form-control" />
+                        <span asp-validation-for="FixedAmountUsd" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6 mb-3" data-sizing-field="percent">
+                        <label asp-for="PercentOfNotional" class="form-label">Percent of notional</label>
+                        <input asp-for="PercentOfNotional" type="number" step="0.1" min="0" max="100" class="form-control" />
+                        <span asp-validation-for="PercentOfNotional" class="text-danger small"></span>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="mb-4">
+                <legend class="h5">Daily limits (optional)</legend>
+                <p class="form-text mt-0">
+                    Either, both, or neither may be set. Whichever limit is reached first pauses copying for the rest of the UTC day.
+                </p>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="DailyTradeOperationsLimit" class="form-label"></label>
+                        <input asp-for="DailyTradeOperationsLimit" type="number" min="1" class="form-control"
+                               placeholder="e.g. 10" />
+                        <span asp-validation-for="DailyTradeOperationsLimit" class="text-danger small"></span>
+                        <div class="form-text">Max number of copy-trades per day.</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="DailyTradeMoneyLimit" class="form-label"></label>
+                        <input asp-for="DailyTradeMoneyLimit" type="number" step="0.01" min="0" class="form-control"
+                               placeholder="e.g. 100" />
+                        <span asp-validation-for="DailyTradeMoneyLimit" class="text-danger small"></span>
+                        <div class="form-text">Max USDC spent on copy-trades per day.</div>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="mb-4">
+                <legend class="h5">Plan expiration (optional)</legend>
+                <div class="mb-3">
+                    <label asp-for="ExpiresAt" class="form-label"></label>
+                    <input asp-for="ExpiresAt" class="form-control" />
+                    <span asp-validation-for="ExpiresAt" class="text-danger small"></span>
+                    <div class="form-text">After this date, copying stops automatically. Leave empty for no expiration.</div>
+                </div>
+            </fieldset>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Start copying</button>
+                <a asp-page="Index" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        (function () {
+            const radios = document.querySelectorAll('input[name="SizingMode"]');
+            const fields = document.querySelectorAll('[data-sizing-field]');
+
+            function sync() {
+                const selected = document.querySelector('input[name="SizingMode"]:checked')?.value;
+                fields.forEach(el => {
+                    el.classList.toggle('d-none', el.dataset.sizingField !== selected);
+                });
+            }
+
+            radios.forEach(r => r.addEventListener('change', sync));
+            sync();
+        })();
+    </script>
+}

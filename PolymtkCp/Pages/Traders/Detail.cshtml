@@ -1,0 +1,254 @@
+@page "{id:guid}"
+@model PolymtkCp.Pages.Traders.DetailModel
+@{
+    ViewData["Title"] = Model.Trader?.Nickname ?? "Trader";
+}
+
+<a asp-page="Index" class="btn btn-link mb-3 ps-0">&larr; Back to traders</a>
+
+@if (Model.Trader is null || Model.Plan is null)
+{
+    <div class="alert alert-warning">Trader not found.</div>
+    return;
+}
+
+<h2>@(Model.Trader.Nickname ?? "Trader")</h2>
+<p class="text-muted">
+    <a href="https://polymarket.com/profile/@Model.Trader.WalletAddress" target="_blank" rel="noopener"
+       title="Open trader profile on Polymarket">
+        <code>@Model.Trader.WalletAddress</code>
+    </a>
+    <span class="small ms-2">↗ polymarket.com</span>
+</p>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Your copy plan</h5>
+        <dl class="row mb-0 small">
+            <dt class="col-sm-3">Sizing</dt>
+            <dd class="col-sm-9">
+                @if (Model.Plan.SizingMode == "fixed")
+                {
+                    <text>$@Model.Plan.FixedAmountUsd per trade</text>
+                }
+                else
+                {
+                    <text>@Model.Plan.PercentOfNotional% of notional</text>
+                }
+            </dd>
+
+            <dt class="col-sm-3">Daily ops limit</dt>
+            <dd class="col-sm-9">@(Model.Plan.DailyTradeOperationsLimit?.ToString() ?? "none")</dd>
+
+            <dt class="col-sm-3">Daily money limit</dt>
+            <dd class="col-sm-9">@(Model.Plan.DailyTradeMoneyLimit is decimal m ? $"${m:N2}" : "none")</dd>
+
+            <dt class="col-sm-3">Expires</dt>
+            <dd class="col-sm-9">@(Model.Plan.ExpiresAt?.ToString("u") ?? "never")</dd>
+
+            <dt class="col-sm-3">Status</dt>
+            <dd class="col-sm-9">@(Model.Plan.IsActive ? "Active" : "Paused")</dd>
+        </dl>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-warning">@Model.ErrorMessage</div>
+}
+
+<h3 class="mt-4">Copy-trade history</h3>
+
+@if (Model.Executions.Count == 0)
+{
+    <p class="text-muted small">
+        No copy-trades yet. The watcher will record entries here as the trader makes new trades.
+    </p>
+}
+else
+{
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Time (UTC)</th>
+                <th>Mode</th>
+                <th>Status</th>
+                <th>Side</th>
+                <th>Event</th>
+                <th>Outcome</th>
+                <th class="text-end">Price</th>
+                <th class="text-end">Size (USDC)</th>
+                <th>Reason</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var e in Model.Executions)
+            {
+                <tr>
+                    <td class="small">@e.CreatedAt.ToUniversalTime().ToString("u")</td>
+                    <td>
+                        @if (e.Mode == "paper")
+                        {
+                            <span class="badge bg-secondary">PAPER</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-info text-dark">REAL</span>
+                        }
+                    </td>
+                    <td>
+                        @{
+                            var (cls, label) = e.Status switch
+                            {
+                                "simulated" => ("bg-primary", "Simulated"),
+                                "skipped"   => ("bg-warning text-dark", "Skipped"),
+                                "pending"   => ("bg-secondary", "Pending"),
+                                "submitted" => ("bg-info text-dark", "Submitted"),
+                                "filled"    => ("bg-success", "Filled"),
+                                "failed"    => ("bg-danger", "Failed"),
+                                _            => ("bg-light text-dark", e.Status),
+                            };
+                        }
+                        <span class="badge @cls">@label</span>
+                    </td>
+                    <td>
+                        @if (e.Side == "BUY")
+                        {
+                            <span class="badge bg-success">BUY</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-danger">SELL</span>
+                        }
+                    </td>
+                    <td>
+                        @{
+                            var execLabel = e.EventTitle ?? e.Slug ?? "—";
+                        }
+                        @if (!string.IsNullOrEmpty(e.Slug))
+                        {
+                            <a href="https://polymarket.com/event/@e.Slug" target="_blank" rel="noopener">@execLabel</a>
+                        }
+                        else
+                        {
+                            @execLabel
+                        }
+                    </td>
+                    <td>@e.Outcome</td>
+                    <td class="text-end">@e.Price.ToString("P1")</td>
+                    <td class="text-end">$@e.SizeUsdc.ToString("N2")</td>
+                    <td class="small text-muted">@e.Reason</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<h3 class="mt-4">Open positions</h3>
+
+@if (Model.Positions.Count == 0)
+{
+    <p class="text-muted">No open positions.</p>
+}
+else
+{
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Event</th>
+                <th>Outcome</th>
+                <th class="text-end">Size</th>
+                <th class="text-end">Avg price</th>
+                <th class="text-end">Current value</th>
+                <th class="text-end">PnL</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in Model.Positions)
+            {
+                <tr>
+                    <td>
+                        @{
+                            var posLabel = p.Title ?? p.Slug ?? "—";
+                        }
+                        @if (!string.IsNullOrEmpty(p.Slug))
+                        {
+                            <a href="https://polymarket.com/event/@p.Slug" target="_blank" rel="noopener">@posLabel</a>
+                        }
+                        else
+                        {
+                            @posLabel
+                        }
+                    </td>
+                    <td>@p.Outcome</td>
+                    <td class="text-end">@p.Size.ToString("N2")</td>
+                    <td class="text-end">@p.AvgPrice.ToString("P0")</td>
+                    <td class="text-end">$@p.CurrentValue.ToString("N2")</td>
+                    <td class="text-end @(p.CashPnl >= 0 ? "text-success" : "text-danger")">
+                        $@p.CashPnl.ToString("N2") (@p.PercentPnl.ToString("P1"))
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<h3 class="mt-4">Recent activity</h3>
+
+@if (Model.Activity.Count == 0)
+{
+    <p class="text-muted">No recent activity.</p>
+}
+else
+{
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Time (UTC)</th>
+                <th>Side</th>
+                <th>Event</th>
+                <th>Outcome</th>
+                <th class="text-end">Price</th>
+                <th class="text-end">USDC size</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var a in Model.Activity)
+            {
+                <tr>
+                    <td class="small">@a.Timestamp.UtcDateTime.ToString("u")</td>
+                    <td>
+                        @if (a.Side == "BUY")
+                        {
+                            <span class="badge bg-success">BUY</span>
+                        }
+                        else if (a.Side == "SELL")
+                        {
+                            <span class="badge bg-danger">SELL</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">@a.Type</span>
+                        }
+                    </td>
+                    <td>
+                        @{
+                            var actLabel = a.Title ?? a.Slug ?? "—";
+                        }
+                        @if (!string.IsNullOrEmpty(a.Slug))
+                        {
+                            <a href="https://polymarket.com/event/@a.Slug" target="_blank" rel="noopener">@actLabel</a>
+                        }
+                        else
+                        {
+                            @actLabel
+                        }
+                    </td>
+                    <td>@a.Outcome</td>
+                    <td class="text-end">@a.Price.ToString("P1")</td>
+                    <td class="text-end">$@a.UsdcSize.ToString("N2")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

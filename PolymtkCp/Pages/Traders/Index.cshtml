@@ -1,0 +1,119 @@
+@page
+@model PolymtkCp.Pages.Traders.IndexModel
+@{
+    ViewData["Title"] = "Traders";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Traders you copy</h2>
+    <a asp-page="Add" class="btn btn-primary">+ Add trader</a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+@if (Model.Rows.Count == 0)
+{
+    <div class="alert alert-info">
+        You're not copying anyone yet. <a asp-page="Add" class="alert-link">Add your first trader</a>.
+    </div>
+}
+else
+{
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Nickname</th>
+                <th>Wallet</th>
+                <th>Sizing</th>
+                <th>Daily limits</th>
+                <th>Expires</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Model.Rows)
+            {
+                var t = row.Trader;
+                var p = row.Plan;
+                <tr>
+                    <td>@(t?.Nickname ?? "—")</td>
+                    <td>
+                        @if (!string.IsNullOrEmpty(t?.WalletAddress))
+                        {
+                            <a href="https://polymarket.com/profile/@t.WalletAddress" target="_blank" rel="noopener"
+                               title="Open on Polymarket">
+                                <code class="small">@t.WalletAddress</code>
+                            </a>
+                        }
+                        else
+                        {
+                            <code class="small">(missing)</code>
+                        }
+                    </td>
+                    <td>
+                        @if (p.SizingMode == "fixed")
+                        {
+                            <span>$@p.FixedAmountUsd / trade</span>
+                        }
+                        else
+                        {
+                            <span>@p.PercentOfNotional% of notional</span>
+                        }
+                    </td>
+                    <td class="small">
+                        @if (p.DailyTradeOperationsLimit is null && p.DailyTradeMoneyLimit is null)
+                        {
+                            <span class="text-muted">none</span>
+                        }
+                        else
+                        {
+                            @if (p.DailyTradeOperationsLimit is int n)
+                            {
+                                <div>@n ops/day</div>
+                            }
+                            @if (p.DailyTradeMoneyLimit is decimal m)
+                            {
+                                <div>$@m.ToString("N0")/day</div>
+                            }
+                        }
+                    </td>
+                    <td class="small">
+                        @if (p.ExpiresAt is { } exp)
+                        {
+                            <span>@exp.ToUniversalTime().ToString("yyyy-MM-dd")</span>
+                        }
+                        else
+                        {
+                            <span class="text-muted">never</span>
+                        }
+                    </td>
+                    <td>
+                        @if (!p.IsActive)
+                        {
+                            <span class="badge bg-secondary">Paused</span>
+                        }
+                        else if (p.ExpiresAt is { } expiry && expiry <= DateTime.UtcNow)
+                        {
+                            <span class="badge bg-warning text-dark">Expired</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-success">Active</span>
+                        }
+                    </td>
+                    <td class="text-end">
+                        <a asp-page="Detail" asp-route-id="@p.Id" class="btn btn-sm btn-outline-primary">View</a>
+                        <form method="post" asp-page-handler="Delete" asp-route-id="@p.Id" class="d-inline"
+                              onsubmit="return confirm('Stop copying this trader?');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
