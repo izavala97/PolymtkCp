@@ -83,9 +83,10 @@ public sealed class OrderExecutor : BackgroundService
 
         _logger.LogInformation("Executor: processing {Count} pending real-mode rows.", pending.Count);
 
-        // Cache decrypted credentials per follower for the duration of this tick;
+        // Cache decrypted credentials and profile wallet per follower for the duration of this tick;
         // an active trader may have many pending rows in one batch.
         var credCache = new Dictionary<Guid, Secrets.PolymarketCredentials?>();
+        var walletCache = new Dictionary<Guid, string?>();
 
         foreach (var row in pending)
         {
@@ -97,6 +98,11 @@ public sealed class OrderExecutor : BackgroundService
                 {
                     creds = await _secrets.GetActiveAsync(row.FollowerId, ct);
                     credCache[row.FollowerId] = creds;
+                }
+                if (!walletCache.TryGetValue(row.FollowerId, out var wallet))
+                {
+                    wallet = await GetFollowerWalletAsync(row.FollowerId, ct);
+                    walletCache[row.FollowerId] = wallet;
                 }
 
                 if (creds is null)
@@ -114,7 +120,7 @@ public sealed class OrderExecutor : BackgroundService
 
                 var result = await _clob.PlaceOrderAsync(
                     new OrderRequest(row.Asset, row.Side, row.Price, row.SizeShares),
-                    creds, ct);
+                    creds, wallet ?? string.Empty, ct);
 
                 if (result.Success)
                     await MarkSubmittedAsync(row, result.OrderId, ct);
@@ -156,6 +162,16 @@ public sealed class OrderExecutor : BackgroundService
         _logger.LogWarning(
             "Executor: row {RowId} failed for follower {FollowerId}: {Reason}",
             row.Id, row.FollowerId, reason);
+    }
+
+    private async Task<string?> GetFollowerWalletAsync(Guid followerId, CancellationToken ct)
+    {
+        var resp = await _supa.Client
+            .From<FollowerProfile>()
+            .Filter("follower_id", Constants.Operator.Equals, followerId.ToString())
+            .Limit(1)
+            .Get(ct);
+        return resp.Models.FirstOrDefault()?.PolymarketWalletAddress;
     }
 
     private static string Truncate(string s, int max) =>

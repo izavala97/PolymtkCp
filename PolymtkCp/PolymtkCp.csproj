@@ -11,6 +11,8 @@
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.1" />
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.1" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Nethereum.ABI" Version="6.1.0" />
+    <PackageReference Include="Nethereum.Signer" Version="6.1.0" />
     <PackageReference Include="Supabase" Version="1.1.1" />
   </ItemGroup>
 

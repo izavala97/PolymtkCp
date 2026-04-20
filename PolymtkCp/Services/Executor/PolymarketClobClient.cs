@@ -1,42 +1,34 @@
-using System.Net.Http.Json;
+using System.Numerics;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
+using Nethereum.Signer;
 using PolymtkCp.Services.Secrets;
 
 namespace PolymtkCp.Services.Executor;
 
 /// <summary>
-/// Thin client for the Polymarket CLOB order endpoint.
+/// Client for the Polymarket CTF Exchange (CLOB).
 ///
-/// <para><b>Status (April 2026):</b> the HTTP plumbing, credential plumbing,
-/// and executor wiring are in place. The actual EIP-712 order signing +
-/// L2 HMAC request signing are NOT yet implemented — a stub returns a
-/// failure result with a clearly-marked reason so the
-/// <see cref="OrderExecutor"/> hosted service can transition pending rows
-/// to <c>failed</c> and surface the gap to the user, rather than silently
-/// dropping orders.</para>
-///
-/// <para>Next steps to complete order placement:
+/// <para>For each order, the client:
 /// <list type="number">
-///   <item>Add a managed secp256k1 + EIP-712 dependency (e.g. Nethereum).</item>
-///   <item>Implement <see cref="SignOrderAsync"/> per
-///     <c>https://docs.polymarket.com/developers/CLOB/orders/orders</c>:
-///     domain <c>name="Polymarket CTF Exchange", version="1", chainId=137,
-///     verifyingContract=0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E</c>;
-///     <c>Order</c> struct fields <c>(salt, maker, signer, taker, tokenId,
-///     makerAmount, takerAmount, expiration, nonce, feeRateBps, side,
-///     signatureType)</c>.
-///   </item>
-///   <item>Implement <see cref="BuildL2Headers"/>: HMAC-SHA256 over
-///     <c>timestamp + method + requestPath + body</c> using the L2 secret
-///     (base64-decoded), then base64-encode the digest into the
-///     <c>POLY_SIGNATURE</c> header. Other headers: <c>POLY_API_KEY</c>,
-///     <c>POLY_TIMESTAMP</c>, <c>POLY_PASSPHRASE</c>, <c>POLY_ADDRESS</c>.
-///   </item>
-///   <item>POST the signed order to <c>/order</c> and parse the response.</item>
+///   <item>Looks up the market's tick size and neg-risk flag (public endpoints).</item>
+///   <item>Computes integer maker / taker amounts in 6-decimal USDC units.</item>
+///   <item>EIP-712-signs the resulting <c>Order</c> struct with the Follower's wallet private key.</item>
+///   <item>Builds the L2 HMAC headers from the saved API credentials.</item>
+///   <item>POSTs to <c>/order</c> and parses the response.</item>
 /// </list></para>
 /// </summary>
 public sealed class PolymarketClobClient
 {
+    private static readonly JsonSerializerOptions OrderJsonOptions = new()
+    {
+        PropertyNamingPolicy = null,
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+    };
+
     private readonly HttpClient _http;
     private readonly ExecutorOptions _options;
     private readonly ILogger<PolymarketClobClient> _logger;
@@ -54,38 +46,91 @@ public sealed class PolymarketClobClient
     public async Task<OrderPlacementResult> PlaceOrderAsync(
         OrderRequest order,
         PolymarketCredentials creds,
+        string fallbackFunderAddress,
         CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(creds.PrivateKey))
             return new(false, null, "Wallet private key missing — required to EIP-712-sign the order.");
 
+        var funder = !string.IsNullOrEmpty(creds.FunderAddress) ? creds.FunderAddress : fallbackFunderAddress;
+        if (string.IsNullOrEmpty(funder))
+            return new(false, null, "No funder address configured (neither in credentials nor profile wallet).");
+
         try
         {
-            // Step 1: sign the order struct (EIP-712).
-            var signedOrder = await SignOrderAsync(order, creds.PrivateKey!, ct);
-            if (signedOrder is null)
-                return new(false, null, "Order signing not yet implemented (CLOB EIP-712).");
+            // 1. Discover market parameters. Both endpoints are public; the executor pays
+            //    the round-trip per order — fine for low-volume copy-trading.
+            var (tickSize, negRisk) = await GetMarketMetaAsync(order.Asset, ct);
 
-            // Step 2: compose the request, attach L2 HMAC headers.
+            // 2. Compute amounts and assemble the unsigned order.
+            var (makerAmount, takerAmount) =
+                PolymarketOrderAmounts.Compute(order.Side, order.Price, order.SizeShares, tickSize);
+            if (makerAmount == 0 || takerAmount == 0)
+                return new(false, null,
+                    $"Computed order amounts rounded to zero (price={order.Price}, size={order.SizeShares}, tick={tickSize}).");
+
+            var signerAddress = new EthECKey(creds.PrivateKey).GetPublicAddress();
+            var sigType = (byte)Math.Clamp(creds.SignatureType, 0, 2);
+            byte sideByte = order.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase) ? (byte)0 : (byte)1;
+
+            var unsigned = new SignedOrderData(
+                Salt: PolymarketOrderSigner.NewSalt(),
+                Maker: funder,
+                Signer: signerAddress,
+                Taker: "0x0000000000000000000000000000000000000000",
+                TokenId: BigInteger.Parse(order.Asset),
+                MakerAmount: makerAmount,
+                TakerAmount: takerAmount,
+                Expiration: 0,
+                Nonce: 0,
+                FeeRateBps: 0,
+                Side: sideByte,
+                SignatureType: sigType);
+
+            // 3. Sign.
+            var signature = PolymarketOrderSigner.Sign(unsigned, negRisk, _options.ChainId, creds.PrivateKey);
+
+            // 4. Compose the request body Polymarket expects: { order: {...}, owner, orderType }.
+            var body = new
+            {
+                order = new
+                {
+                    salt = unsigned.Salt.ToString(),
+                    maker = unsigned.Maker,
+                    signer = unsigned.Signer,
+                    taker = unsigned.Taker,
+                    tokenId = unsigned.TokenId.ToString(),
+                    makerAmount = unsigned.MakerAmount.ToString(),
+                    takerAmount = unsigned.TakerAmount.ToString(),
+                    side = order.Side.ToUpperInvariant(),
+                    expiration = unsigned.Expiration.ToString(),
+                    nonce = unsigned.Nonce.ToString(),
+                    feeRateBps = unsigned.FeeRateBps.ToString(),
+                    signatureType = (int)unsigned.SignatureType,
+                    signature,
+                },
+                owner = creds.ApiKey,
+                orderType = "GTC",
+            };
+            var serialized = JsonSerializer.Serialize(body, OrderJsonOptions);
+
+            // 5. Sign the HTTP request itself with the L2 HMAC headers.
             using var req = new HttpRequestMessage(HttpMethod.Post, "/order")
             {
-                Content = JsonContent.Create(signedOrder),
+                Content = new StringContent(serialized, Encoding.UTF8, "application/json"),
             };
-            BuildL2Headers(req, creds, "POST", "/order", body: ""); // body hash TBD with signing
+            ApplyL2Headers(req, creds, funder, "POST", "/order", serialized);
 
-            // Step 3: send + parse.
             using var resp = await _http.SendAsync(req, ct);
             var raw = await resp.Content.ReadAsStringAsync(ct);
             if (!resp.IsSuccessStatusCode)
             {
                 _logger.LogWarning(
-                    "CLOB rejected order asset={Asset} side={Side}: {Status} {Body}",
-                    order.Asset, order.Side, (int)resp.StatusCode, raw);
+                    "CLOB rejected order asset={Asset} side={Side} size={Size}: {Status} {Body}",
+                    order.Asset, order.Side, order.SizeShares, (int)resp.StatusCode, Truncate(raw, 400));
                 return new(false, null, $"CLOB {(int)resp.StatusCode}: {Truncate(raw, 200)}");
             }
 
-            // Tolerant parse: the CLOB returns { orderId, ... } on success;
-            // grab whatever id-shaped field is there for traceability.
             var orderId = TryExtractOrderId(raw) ?? "(no-id)";
             return new(true, orderId, null);
         }
@@ -97,44 +142,89 @@ public sealed class PolymarketClobClient
         }
     }
 
-    /// <summary>
-    /// Build and sign the CLOB <c>Order</c> struct.
-    /// TODO(phase2-signing): implement EIP-712. Returning null causes the executor
-    /// to mark the row as failed with a clear reason instead of silently dropping it.
-    /// </summary>
-    private Task<object?> SignOrderAsync(OrderRequest order, string privateKey, CancellationToken ct)
+    private async Task<(string TickSize, bool NegRisk)> GetMarketMetaAsync(string tokenId, CancellationToken ct)
     {
-        _logger.LogWarning(
-            "PolymarketClobClient.SignOrderAsync is not implemented yet. " +
-            "Order for asset={Asset} side={Side} size={Size} will be marked failed.",
-            order.Asset, order.Side, order.SizeShares);
-        return Task.FromResult<object?>(null);
+        // /tick-size?token_id=... -> { "minimum_tick_size": "0.01" }
+        // /neg-risk?token_id=...  -> { "neg_risk": false }
+        // Both are public; the executor's HttpClient already targets the CLOB host.
+        var tick = "0.01";
+        var negRisk = false;
+
+        try
+        {
+            using var resp = await _http.GetAsync($"/tick-size?token_id={tokenId}", ct);
+            if (resp.IsSuccessStatusCode)
+            {
+                var json = await resp.Content.ReadAsStringAsync(ct);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("minimum_tick_size", out var t))
+                    tick = t.GetString() ?? tick;
+            }
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "Tick-size lookup failed for {Token}; using default.", tokenId); }
+
+        try
+        {
+            using var resp = await _http.GetAsync($"/neg-risk?token_id={tokenId}", ct);
+            if (resp.IsSuccessStatusCode)
+            {
+                var json = await resp.Content.ReadAsStringAsync(ct);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("neg_risk", out var n))
+                    negRisk = n.GetBoolean();
+            }
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "Neg-risk lookup failed for {Token}; using default.", tokenId); }
+
+        return (tick, negRisk);
     }
 
-    /// <summary>
-    /// Attach the L2 HMAC headers Polymarket requires on every authenticated CLOB request.
-    /// TODO(phase2-signing): implement HMAC-SHA256 of <c>timestamp + method + path + body</c>.
-    /// </summary>
-    private static void BuildL2Headers(HttpRequestMessage req, PolymarketCredentials creds,
-        string method, string path, string body)
+    private static void ApplyL2Headers(HttpRequestMessage req, PolymarketCredentials creds,
+        string funderAddress, string method, string path, string body)
     {
-        // Placeholder — leave headers absent. The CLOB will reject the request, which
-        // surfaces the missing implementation in the executor's failure-reason column.
-        // Real implementation lands with SignOrderAsync.
-        _ = req; _ = creds; _ = method; _ = path; _ = body;
+        // Per py-clob-client signing/hmac.py:
+        //   secret = base64-urlsafe-decode(creds.Secret)
+        //   message = timestamp + method + requestPath + body  (with "'" replaced by '"')
+        //   signature = base64-urlsafe-encode(HMAC-SHA256(secret, message))
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        var normalizedBody = body.Replace("'", "\"");
+        var message = timestamp + method + path + normalizedBody;
+
+        var key = Base64UrlDecode(creds.Secret);
+        using var hmac = new HMACSHA256(key);
+        var digest = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
+        var signature = Base64UrlEncode(digest);
+
+        req.Headers.TryAddWithoutValidation("POLY_ADDRESS", funderAddress);
+        req.Headers.TryAddWithoutValidation("POLY_SIGNATURE", signature);
+        req.Headers.TryAddWithoutValidation("POLY_TIMESTAMP", timestamp);
+        req.Headers.TryAddWithoutValidation("POLY_API_KEY", creds.ApiKey);
+        req.Headers.TryAddWithoutValidation("POLY_PASSPHRASE", creds.Passphrase);
     }
+
+    private static byte[] Base64UrlDecode(string input)
+    {
+        // urlsafe variant uses '-' and '_' instead of '+' and '/'.
+        var s = input.Replace('-', '+').Replace('_', '/');
+        switch (s.Length % 4)
+        {
+            case 2: s += "=="; break;
+            case 3: s += "="; break;
+        }
+        return Convert.FromBase64String(s);
+    }
+
+    private static string Base64UrlEncode(byte[] bytes) =>
+        Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_');
 
     private static string? TryExtractOrderId(string body)
     {
         try
         {
-            using var doc = System.Text.Json.JsonDocument.Parse(body);
-            if (doc.RootElement.TryGetProperty("orderId", out var idEl))
-                return idEl.GetString();
-            if (doc.RootElement.TryGetProperty("orderID", out idEl))
-                return idEl.GetString();
-            if (doc.RootElement.TryGetProperty("id", out idEl))
-                return idEl.GetString();
+            using var doc = JsonDocument.Parse(body);
+            foreach (var key in new[] { "orderID", "orderId", "id" })
+                if (doc.RootElement.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String)
+                    return v.GetString();
         }
         catch { /* not JSON or unexpected shape — fine */ }
         return null;
