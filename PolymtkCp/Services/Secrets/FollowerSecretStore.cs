@@ -41,9 +41,28 @@ public sealed class FollowerSecretStore : IFollowerSecretStore
             .Filter("is_active", Constants.Operator.Equals, true)
             .Single();
 
-        return active is null
-            ? new FollowerSecretStatus(false, null, null)
-            : new FollowerSecretStatus(true, active.Version, active.UpdatedAt);
+        if (active is null)
+            return new FollowerSecretStatus(false, null, null, false);
+
+        // Decrypt to detect whether the row carries a wallet private key.
+        // Cost is one Data Protection unprotect per call; the Profile page
+        // calls this once per render, the Edit page once per render — both
+        // negligible compared to the surrounding Supabase round-trips.
+        bool hasPk = false;
+        try
+        {
+            var creds = Decrypt(active.Ciphertext);
+            hasPk = !string.IsNullOrEmpty(creds.PrivateKey);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "GetStatusAsync: could not decrypt active row {Id} for follower {FollowerId}; " +
+                "treating as no-private-key.",
+                active.Id, followerId);
+        }
+
+        return new FollowerSecretStatus(true, active.Version, active.UpdatedAt, hasPk);
     }
 
     public async Task SetAsync(Guid followerId, PolymarketCredentials creds, CancellationToken ct = default)

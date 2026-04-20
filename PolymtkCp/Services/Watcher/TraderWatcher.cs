@@ -238,8 +238,14 @@ public sealed class TraderWatcher : BackgroundService
             {
                 CopyPlanId = plan.Id,
                 FollowerId = plan.FollowerId,
-                Mode = "paper",                   // phase 1: never live
-                Status = status,
+                // Real plans get mode='real'; everything else stays paper. The OrderExecutor
+                // background service consumes mode='real',status='pending' rows and either
+                // submits them to the CLOB or marks them failed (e.g. missing credentials).
+                Mode = plan.Mode == "real" ? "real" : "paper",
+                // Promote 'simulated' to 'pending' for real plans so the executor picks them up.
+                // Skipped rows (limits, expiration, missing fields) stay skipped: there's
+                // nothing for the executor to do with them, and we still want the audit row.
+                Status = plan.Mode == "real" && status == "simulated" ? "pending" : status,
                 SourceActivityHash = t.TransactionHash!,
                 SourceTimestamp = t.Timestamp.UtcDateTime,
                 Asset = t.Asset ?? string.Empty,

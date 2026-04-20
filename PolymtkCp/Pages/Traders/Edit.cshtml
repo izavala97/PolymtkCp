@@ -45,13 +45,24 @@
                         </label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="radio" asp-for="Mode" value="real" id="modeReal" disabled />
-                        <label class="form-check-label text-muted" for="modeReal">
-                            <strong>Real</strong> &mdash; orders submitted on your behalf.
-                            <span class="badge bg-warning text-dark">Phase 2</span>
+                        <input class="form-check-input" type="radio" asp-for="Mode" value="real" id="modeReal"
+                               disabled="@(!Model.RealModeAvailable)" />
+                        <label class="form-check-label @(Model.RealModeAvailable ? "" : "text-muted")" for="modeReal">
+                            <strong>Real</strong> &mdash; orders submitted on your behalf via the executor.
+                            @if (!Model.RealModeAvailable)
+                            {
+                                <span class="badge bg-secondary">Save credentials + wallet key on <a asp-page="/Account/Profile" class="text-white">Profile</a> to enable</span>
+                            }
                         </label>
                     </div>
                 </div>
+                @if (Model.RealModeAvailable)
+                {
+                    <div class="form-text">
+                        Real-mode plans emit <code>pending</code> rows that the background executor picks up and submits to the Polymarket CLOB.
+                        Daily limits and expiration apply to real orders the same way they do to paper trades.
+                    </div>
+                }
             </fieldset>
 
             <fieldset class="mb-4">

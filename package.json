@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@polymarket/clob-client": "^5.8.1",
+    "ethers": "^5.8.0"
+  }
+}

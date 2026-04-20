@@ -109,18 +109,68 @@
 
         <hr class="my-4" />
 
-        <h5 class="mb-1">Polymarket trading credentials</h5>
-        <p class="text-muted small">
-            L2 API key + secret + passphrase used by the upcoming phase-2 executor.
-            Encrypted at rest via ASP.NET Data Protection (KEK in Azure Key Vault).
+        <h5 class="mb-1">Polymarket CLOB L2 API credentials</h5>
+        <p class="text-muted small mb-2">
+            The phase-2 executor signs orders with a 3-part HMAC credential issued by
+            the Polymarket order book (CLOB): <code>POLY_API_KEY</code>,
+            <code>POLY_API_SECRET</code>, and <code>POLY_PASSPHRASE</code>.
+            Stored encrypted via ASP.NET Data Protection (KEK in Azure Key Vault).
             <strong>The watcher does not place orders yet</strong> — credentials are
-            stored now so the executor can use them when it ships.
+            saved now so the executor can use them when it ships.
         </p>
+        <div class="alert alert-warning small py-2 mb-2">
+            <strong>These are not the same as:</strong>
+            <ul class="mb-0">
+                <li>The <strong>Relayer API Key</strong> shown under Settings → Relayer API Keys (that one is for gasless on-chain ops, not orders).</li>
+                <li>Your <strong>private key</strong> (Magic.Link export). Never paste that here.</li>
+            </ul>
+        </div>
+        <details class="mb-3 small">
+            <summary class="text-primary" style="cursor:pointer;">How do I get these three values?</summary>
+            <div class="mt-2">
+                Polymarket does <strong>not</strong> show CLOB L2 credentials in the web UI.
+                You derive them once per wallet by signing a request with the wallet's
+                private key. Pick one path:
+                <h6 class="mt-3 mb-1">Option A — Python (py-clob-client)</h6>
+<pre class="bg-light p-2 small mb-2"><code>pip install py-clob-client
+python -c "
+from py_clob_client.client import ClobClient
+from py_clob_client.constants import POLYGON
+c = ClobClient('https://clob.polymarket.com', key='&lt;YOUR_PRIVATE_KEY&gt;', chain_id=POLYGON)
+creds = c.create_or_derive_api_creds()
+print('POLY_API_KEY    =', creds.api_key)
+print('POLY_API_SECRET =', creds.api_secret)
+print('POLY_PASSPHRASE =', creds.api_passphrase)
+"</code></pre>
+                <h6 class="mt-3 mb-1">Option B — TypeScript (@@polymarket/clob-client)</h6>
+<pre class="bg-light p-2 small mb-2"><code>npm i @@polymarket/clob-client ethers@@5
+node -e "
+const {ClobClient} = require('@@polymarket/clob-client');
+const {Wallet} = require('ethers');
+const signer = new Wallet('&lt;YOUR_PRIVATE_KEY&gt;');
+const c = new ClobClient('https://clob.polymarket.com', 137, signer);
+c.createOrDeriveApiKey().then(k =&gt; console.log(k));
+"</code></pre>
+                <ol class="mb-0">
+                    <li>Get your wallet's private key from Polymarket: <strong>Settings → Private Key → Start Export</strong>.</li>
+                    <li>Run one of the snippets above on your local machine.</li>
+                    <li>Copy the three returned values into the fields below.</li>
+                    <li>The same wallet always derives the same triple, so re-run anytime to recover them.</li>
+                </ol>
+            </div>
+        </details>
 
         @if (Model.CredentialsStatus is { HasActive: true } st)
         {
-            <div class="alert alert-success py-2 small mb-3">
-                Configured (version @st.Version, set @st.UpdatedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm")).
+            <div class="alert @(st.HasPrivateKey ? "alert-success" : "alert-warning") py-2 small mb-3">
+                @if (st.HasPrivateKey)
+                {
+                    <text>Configured (version @st.Version, set @st.UpdatedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm")). <strong>Real mode is available</strong> on your CopyPlans.</text>
+                }
+                else
+                {
+                    <text>L2 credentials configured (version @st.Version, set @st.UpdatedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm")), but the wallet <strong>private key is missing</strong>. Add it below to enable Real mode.</text>
+                }
             </div>
         }
         else
@@ -141,6 +191,24 @@
                 <label asp-for="CredPassphrase" class="form-label"></label>
                 <input asp-for="CredPassphrase" type="password" class="form-control" autocomplete="off" />
             </div>
+
+            <hr class="my-3" />
+
+            <h6 class="mb-1">Wallet private key <span class="badge bg-danger">Required for Real mode</span></h6>
+            <div class="alert alert-danger small py-2 mb-2">
+                <strong>This is sensitive.</strong> The private key gives full control of your wallet's funds.
+                Submit it only over HTTPS and only to a deployment you trust. We encrypt it at rest with
+                ASP.NET Data Protection (KEK in Azure Key Vault) and never log or echo it back to the page.
+                Leave blank to skip and stay in Paper mode for now.
+                <br />Export it from Polymarket: <strong>Settings &rarr; Private Key &rarr; Start Export</strong>.
+            </div>
+            <div class="mb-3">
+                <label asp-for="CredPrivateKey" class="form-label"></label>
+                <input asp-for="CredPrivateKey" type="password" class="form-control"
+                       autocomplete="off" placeholder="0x... (64 hex chars)" />
+                <div class="form-text">Optional. Required only if you want to flip a CopyPlan to Real mode.</div>
+            </div>
+
             <div class="d-flex gap-2">
                 <button type="submit" class="btn btn-primary">Save credentials</button>
                 @if (Model.CredentialsStatus is { HasActive: true })

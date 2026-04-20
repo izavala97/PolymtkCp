@@ -3,22 +3,31 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using PolymtkCp.Models;
+using PolymtkCp.Services.Secrets;
 
 namespace PolymtkCp.Pages.Traders;
 
 public class EditModel : PageModel
 {
     private readonly Supabase.Client _supabase;
+    private readonly IFollowerSecretStore _secretStore;
     private readonly ILogger<EditModel> _logger;
 
-    public EditModel(Supabase.Client supabase, ILogger<EditModel> logger)
+    public EditModel(Supabase.Client supabase, IFollowerSecretStore secretStore, ILogger<EditModel> logger)
     {
         _supabase = supabase;
+        _secretStore = secretStore;
         _logger = logger;
     }
 
     public Guid PlanId { get; private set; }
     public string? TraderLabel { get; private set; }
+
+    /// <summary>
+    /// True only when the Follower has saved an L2 triple AND a wallet private key.
+    /// Drives the Real-mode radio in the view; also enforced server-side in OnPost.
+    /// </summary>
+    public bool RealModeAvailable { get; private set; }
 
     [BindProperty] public bool IsActive { get; set; } = true;
 
@@ -78,6 +87,7 @@ public class EditModel : PageModel
         ExpiresAt = plan.ExpiresAt;
 
         await LoadTraderLabelAsync(plan.TraderId);
+        await LoadRealModeAvailabilityAsync(followerId);
         return Page();
     }
 
@@ -100,6 +110,16 @@ public class EditModel : PageModel
         if (existing is null) return NotFound();
 
         await LoadTraderLabelAsync(existing.TraderId);
+        await LoadRealModeAvailabilityAsync(followerId);
+
+        // Server-side gate: don't trust the client. If Real mode isn't available,
+        // silently coerce back to paper rather than 400'ing — this also handles
+        // the user revoking credentials between page load and form submit.
+        if (Mode == "real" && !RealModeAvailable)
+        {
+            Mode = "paper";
+            ErrorMessage = "Real mode requires saved Polymarket credentials including a wallet private key. Plan reverted to Paper.";
+        }
 
         if (!ModelState.IsValid) return Page();
 
@@ -138,6 +158,20 @@ public class EditModel : PageModel
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Edit: failed to load trader {TraderId}.", traderId);
+        }
+    }
+
+    private async Task LoadRealModeAvailabilityAsync(Guid followerId)
+    {
+        try
+        {
+            var status = await _secretStore.GetStatusAsync(followerId);
+            RealModeAvailable = status.HasActive && status.HasPrivateKey;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Edit: failed to load secret status for {FollowerId}.", followerId);
+            RealModeAvailable = false;
         }
     }
 

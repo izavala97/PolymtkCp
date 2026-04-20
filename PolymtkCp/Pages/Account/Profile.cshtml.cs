@@ -40,14 +40,17 @@ public class ProfileModel : PageModel
     [Display(Name = "Polymarket wallet address or profile URL")]
     public string? WalletInputText { get; set; }
 
-    [BindProperty, Display(Name = "API key")]
+    [BindProperty, Display(Name = "POLY_API_KEY (CLOB L2 API key)")]
     public string? CredApiKey { get; set; }
 
-    [BindProperty, Display(Name = "API secret")]
+    [BindProperty, Display(Name = "POLY_API_SECRET (CLOB L2 API secret)")]
     public string? CredSecret { get; set; }
 
-    [BindProperty, Display(Name = "API passphrase")]
+    [BindProperty, Display(Name = "POLY_PASSPHRASE (CLOB L2 passphrase)")]
     public string? CredPassphrase { get; set; }
+
+    [BindProperty, Display(Name = "Wallet private key (0x… 64 hex chars)")]
+    public string? CredPrivateKey { get; set; }
 
     public FollowerSecretStatus? CredentialsStatus { get; private set; }
 
@@ -165,10 +168,11 @@ public class ProfileModel : PageModel
         var apiKey     = (CredApiKey ?? string.Empty).Trim();
         var secret     = (CredSecret ?? string.Empty).Trim();
         var passphrase = (CredPassphrase ?? string.Empty).Trim();
+        var privateKey = (CredPrivateKey ?? string.Empty).Trim();
 
         if (apiKey.Length == 0 || secret.Length == 0 || passphrase.Length == 0)
         {
-            ErrorMessage = "All three credential fields are required.";
+            ErrorMessage = "L2 API key, secret, and passphrase are all required.";
             await LoadAsync();
             return Page();
         }
@@ -179,10 +183,32 @@ public class ProfileModel : PageModel
             return Page();
         }
 
+        // Private key is optional but, when supplied, must look like a 64-hex
+        // secp256k1 secret (0x-prefix tolerated). Refuse anything else so the
+        // executor never tries to sign with garbage. Real validity is only
+        // proven when the executor actually signs an order.
+        string? normalizedPk = null;
+        if (privateKey.Length > 0)
+        {
+            var stripped = privateKey.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                ? privateKey[2..]
+                : privateKey;
+            if (stripped.Length != 64 || !System.Text.RegularExpressions.Regex.IsMatch(stripped, "^[0-9a-fA-F]{64}$"))
+            {
+                ErrorMessage = "Wallet private key must be exactly 64 hex characters (with or without 0x prefix).";
+                await LoadAsync();
+                return Page();
+            }
+            normalizedPk = "0x" + stripped.ToLowerInvariant();
+        }
+
         try
         {
-            await _secretStore.SetAsync(followerId, new PolymarketCredentials(apiKey, secret, passphrase));
-            StatusMessage = "Polymarket credentials saved.";
+            await _secretStore.SetAsync(followerId,
+                new PolymarketCredentials(apiKey, secret, passphrase, normalizedPk));
+            StatusMessage = normalizedPk is null
+                ? "Polymarket L2 credentials saved. Add your wallet private key to enable Real mode."
+                : "Polymarket credentials saved (L2 + wallet key). Real mode is now available.";
         }
         catch (Exception ex)
         {
@@ -191,7 +217,7 @@ public class ProfileModel : PageModel
         }
 
         // Clear posted secrets from the model so they don't round-trip back to the browser.
-        CredApiKey = CredSecret = CredPassphrase = null;
+        CredApiKey = CredSecret = CredPassphrase = CredPrivateKey = null;
         await LoadAsync();
         return Page();
     }

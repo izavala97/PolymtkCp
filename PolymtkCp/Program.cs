@@ -96,6 +96,49 @@ else
 }
 
 // ---------------------------------------------------------------------------
+// Phase-2 OrderExecutor (background service).
+// Reads pending real-mode rows produced by the watcher, decrypts the Follower's
+// Polymarket credentials, and submits orders to the CLOB. Same service-role
+// requirement as the watcher (cross-Follower reads + writes); the singleton
+// WatcherSupabase registered above is reused.
+// ---------------------------------------------------------------------------
+builder.Services.Configure<PolymtkCp.Services.Executor.ExecutorOptions>(
+    builder.Configuration.GetSection(PolymtkCp.Services.Executor.ExecutorOptions.SectionName));
+
+var executorOpts = builder.Configuration
+    .GetSection(PolymtkCp.Services.Executor.ExecutorOptions.SectionName)
+    .Get<PolymtkCp.Services.Executor.ExecutorOptions>()
+    ?? new PolymtkCp.Services.Executor.ExecutorOptions();
+
+if (executorOpts.Enabled && !string.IsNullOrEmpty(serviceRoleKey))
+{
+    // Reuse the WatcherSupabase service-role client. The OrderExecutor reads the
+    // same table the watcher writes; sharing the singleton keeps connection counts down.
+    builder.Services.AddSingleton(sp =>
+    {
+        var supa = sp.GetRequiredService<PolymtkCp.Services.Watcher.WatcherSupabase>();
+        var dpProvider = sp.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>();
+        var logger = sp.GetRequiredService<ILogger<PolymtkCp.Services.Executor.ExecutorSecretReader>>();
+        return new PolymtkCp.Services.Executor.ExecutorSecretReader(supa.Client, dpProvider, logger);
+    });
+
+    builder.Services.AddHttpClient<PolymtkCp.Services.Executor.PolymarketClobClient>((sp, c) =>
+    {
+        var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PolymtkCp.Services.Executor.ExecutorOptions>>().Value;
+        c.BaseAddress = new Uri(opts.ClobBaseUrl);
+        c.Timeout = TimeSpan.FromSeconds(20);
+        c.DefaultRequestHeaders.UserAgent.ParseAdd("PolymtkCp/0.1");
+        c.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+    });
+
+    builder.Services.AddHostedService<PolymtkCp.Services.Executor.OrderExecutor>();
+}
+else
+{
+    Console.WriteLine("[startup] OrderExecutor disabled (Supabase:SecretKey missing or Executor:Enabled=false).");
+}
+
+// ---------------------------------------------------------------------------
 // ASP.NET Data Protection — encrypts per-Follower Polymarket L2 credentials
 // at rest. In production: key ring persisted to Azure Blob Storage, wrapped
 // (KEK) by an Azure Key Vault key. Auto-rotation every 90 days is the
