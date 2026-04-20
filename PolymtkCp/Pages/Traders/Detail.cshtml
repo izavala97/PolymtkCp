@@ -153,10 +153,11 @@ else
                     <td>
                         @{
                             var execLabel = e.EventTitle ?? e.Slug ?? "—";
+                            var execHref = e.EventSlug ?? e.Slug;
                         }
-                        @if (!string.IsNullOrEmpty(e.Slug))
+                        @if (!string.IsNullOrEmpty(execHref))
                         {
-                            <a href="https://polymarket.com/event/@e.Slug" target="_blank" rel="noopener">@execLabel</a>
+                            <a href="https://polymarket.com/event/@execHref" target="_blank" rel="noopener">@execLabel</a>
                         }
                         else
                         {
@@ -199,10 +200,11 @@ else
                     <td>
                         @{
                             var posLabel = p.Title ?? p.Slug ?? "—";
+                            var posHref = p.EventSlug ?? p.Slug;
                         }
-                        @if (!string.IsNullOrEmpty(p.Slug))
+                        @if (!string.IsNullOrEmpty(posHref))
                         {
-                            <a href="https://polymarket.com/event/@p.Slug" target="_blank" rel="noopener">@posLabel</a>
+                            <a href="https://polymarket.com/event/@posHref" target="_blank" rel="noopener">@posLabel</a>
                         }
                         else
                         {
@@ -263,10 +265,11 @@ else
                     <td>
                         @{
                             var actLabel = a.Title ?? a.Slug ?? "—";
+                            var actHref = a.EventSlug ?? a.Slug;
                         }
-                        @if (!string.IsNullOrEmpty(a.Slug))
+                        @if (!string.IsNullOrEmpty(actHref))
                         {
-                            <a href="https://polymarket.com/event/@a.Slug" target="_blank" rel="noopener">@actLabel</a>
+                            <a href="https://polymarket.com/event/@actHref" target="_blank" rel="noopener">@actLabel</a>
                         }
                         else
                         {

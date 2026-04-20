@@ -47,6 +47,10 @@ public sealed class PolymarketPosition
     [JsonPropertyName("slug")]
     public string? Slug { get; set; }
 
+    /// <summary>Parent event slug — the canonical Polymarket URL is <c>/event/{eventSlug}</c>.</summary>
+    [JsonPropertyName("eventSlug")]
+    public string? EventSlug { get; set; }
+
     [JsonPropertyName("redeemable")]
     public bool Redeemable { get; set; }
 
@@ -93,6 +97,10 @@ public sealed class PolymarketActivity
 
     [JsonPropertyName("slug")]
     public string? Slug { get; set; }
+
+    /// <summary>Parent event slug — the canonical Polymarket URL is <c>/event/{eventSlug}</c>.</summary>
+    [JsonPropertyName("eventSlug")]
+    public string? EventSlug { get; set; }
 
     [JsonPropertyName("transactionHash")]
     public string? TransactionHash { get; set; }

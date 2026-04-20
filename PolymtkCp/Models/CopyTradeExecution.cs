@@ -76,6 +76,10 @@ public class CopyTradeExecution : BaseModel
     [Column("slug")]
     public string? Slug { get; set; }
 
+    /// <summary>Parent event slug — used for the canonical <c>/event/{slug}</c> Polymarket URL.</summary>
+    [Column("event_slug")]
+    public string? EventSlug { get; set; }
+
     /// <summary>Free-text reason when Status is "skipped" or "failed".</summary>
     [Column("reason")]
     public string? Reason { get; set; }

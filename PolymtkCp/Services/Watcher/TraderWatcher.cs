@@ -254,6 +254,7 @@ public sealed class TraderWatcher : BackgroundService
                 EventTitle = t.Title,
                 Outcome = t.Outcome,
                 Slug = t.Slug,
+                EventSlug = t.EventSlug,
                 Reason = reason,
             };
 
