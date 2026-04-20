@@ -100,14 +100,14 @@ else
         <thead>
             <tr>
                 <th>Time (UTC)</th>
-                <th>Mode</th>
-                <th>Status</th>
-                <th>Side</th>
+                <th>Mode @Help("PAPER = simulated only, nothing sent to Polymarket. REAL = order would be (or was) submitted on your behalf.")</th>
+                <th>Status @Help("Simulated: paper-trade recorded. Skipped: limits, expiry or other rule blocked it (see Reason). Pending/Submitted/Filled/Failed apply to REAL mode.")</th>
+                <th>Side @Help("BUY: opening or adding to a position. SELL: closing / reducing an outcome share holding.")</th>
                 <th>Event</th>
-                <th>Outcome</th>
-                <th class="text-end">Price</th>
-                <th class="text-end">Size (USDC)</th>
-                <th>Reason</th>
+                <th>Outcome @Help("Which side of the market (e.g. YES / NO, or a specific candidate / team).")</th>
+                <th class="text-end">Price @Help("Fill price as a probability between 0% and 100% (e.g. 38% means 0.38 USDC per share).")</th>
+                <th class="text-end">Size (USDC) @Help("Notional value of this copy-trade in USDC. For paper trades it is what would have been spent / received.")</th>
+                <th>Reason @Help("Free-form explanation when the row was skipped or scaled (e.g. daily limit reached, plan expired, percentage clamped to available balance).")</th>
             </tr>
         </thead>
         <tbody>
@@ -172,6 +172,90 @@ else
             }
         </tbody>
     </table>
+    await RenderPagerAsync("pe", Model.ExecutionsPage, Model.ExecutionsTotal);
+}
+
+<h3 class="mt-4">Last 30 days</h3>
+
+@{
+    var s = Model.Stats30d;
+    var hasActivity = s.TradeCount > 0 || s.RedeemUsdc > 0;
+    var lastSeen = s.NewestTradeAt;
+    var (badgeCls, badgeText) = lastSeen switch
+    {
+        null => ("bg-secondary", "no recent trades"),
+        var t when (DateTimeOffset.UtcNow - t.Value).TotalDays <= 1 => ("bg-success", $"active — last trade {Humanize(t.Value)}"),
+        var t when (DateTimeOffset.UtcNow - t.Value).TotalDays <= 7 => ("bg-warning text-dark", $"last trade {Humanize(t.Value)}"),
+        var t => ("bg-danger", $"stale — last trade {Humanize(t.Value)}"),
+    };
+}
+
+<div class="mb-2">
+    <span class="badge @badgeCls">@badgeText</span>
+</div>
+
+@if (!hasActivity)
+{
+    <p class="text-muted small">No trades or redemptions in the last 30 days.</p>
+}
+else
+{
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+            <div class="card border-0 bg-light h-100"><div class="card-body py-2">
+                <div class="text-muted small">Trades</div>
+                <div class="h5 mb-0">@s.TradeCount</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-0 bg-light h-100"><div class="card-body py-2">
+                <div class="text-muted small">Bought (USDC)</div>
+                <div class="h5 mb-0">$@s.BuyUsdc.ToString("N0")</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-0 bg-light h-100"><div class="card-body py-2">
+                <div class="text-muted small">Sold + Redeemed</div>
+                <div class="h5 mb-0">$@((s.SellUsdc + s.RedeemUsdc).ToString("N0"))</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card border-0 bg-light h-100"><div class="card-body py-2">
+                <div class="text-muted small">Net cash flow</div>
+                <div class="h5 mb-0 @(s.NetCashFlow >= 0 ? "text-success" : "text-danger")">
+                    @(s.NetCashFlow >= 0 ? "+" : "")$@s.NetCashFlow.ToString("N0")
+                </div>
+            </div></div>
+        </div>
+    </div>
+    <p class="small text-muted mb-3">
+        <strong>Net cash flow</strong> = sells + redemptions &minus; buys, over the last 30 days.
+        Positive means the trader pulled money out of Polymarket; negative means they added
+        exposure. This is a rough activity / liquidity signal, <em>not</em> realized PnL
+        (which would require matching each sale to its original cost basis).
+    </p>
+}
+
+@functions {
+    static Microsoft.AspNetCore.Html.IHtmlContent Help(string text)
+    {
+        var encoded = System.Net.WebUtility.HtmlEncode(text);
+        return new Microsoft.AspNetCore.Html.HtmlString(
+            $" <span class=\"badge rounded-pill bg-light text-muted border ms-1 fw-normal\" " +
+            $"style=\"cursor:help; font-size:0.7em\" " +
+            $"data-bs-toggle=\"tooltip\" data-bs-placement=\"top\" " +
+            $"title=\"{encoded}\">?</span>");
+    }
+
+    static string Humanize(DateTimeOffset t)
+    {
+        var delta = DateTimeOffset.UtcNow - t;
+        if (delta.TotalMinutes < 1) return "just now";
+        if (delta.TotalHours < 1) return $"{(int)delta.TotalMinutes}m ago";
+        if (delta.TotalHours < 24) return $"{(int)delta.TotalHours}h ago";
+        if (delta.TotalDays < 30) return $"{(int)delta.TotalDays}d ago";
+        return t.UtcDateTime.ToString("u");
+    }
 }
 
 <h3 class="mt-4">Open positions</h3>
@@ -186,11 +270,11 @@ else
         <thead>
             <tr>
                 <th>Event</th>
-                <th>Outcome</th>
-                <th class="text-end">Size</th>
-                <th class="text-end">Avg price</th>
-                <th class="text-end">Current value</th>
-                <th class="text-end">PnL</th>
+                <th>Outcome @Help("Which side of the market the trader is holding (YES/NO or a specific candidate / team).")</th>
+                <th class="text-end">Size @Help("Number of outcome shares held. Each share pays out 1 USDC if the outcome wins, 0 if it loses.")</th>
+                <th class="text-end">Avg price @Help("Average price (probability) at which the trader acquired these shares. e.g. 38% = paid 0.38 USDC per share on average.")</th>
+                <th class="text-end">Current value @Help("Mark-to-market value at the latest market price. $0.00 typically means the market resolved against this side and the position is worthless (the trader may simply not have redeemed it).")</th>
+                <th class="text-end">PnL @Help("Unrealized profit/loss vs. cost basis. Negative = losing. -100% means the position is worthless (resolved unfavorably or never sold).")</th>
             </tr>
         </thead>
         <tbody>
@@ -216,12 +300,13 @@ else
                     <td class="text-end">@p.AvgPrice.ToString("P0")</td>
                     <td class="text-end">$@p.CurrentValue.ToString("N2")</td>
                     <td class="text-end @(p.CashPnl >= 0 ? "text-success" : "text-danger")">
-                        $@p.CashPnl.ToString("N2") (@p.PercentPnl.ToString("P1"))
+                        $@p.CashPnl.ToString("N2") (@((p.PercentPnl / 100m).ToString("P1")))
                     </td>
                 </tr>
             }
         </tbody>
     </table>
+    await RenderPagerAsync("pp", Model.PositionsPage, Model.PositionsTotal);
 }
 
 <h3 class="mt-4">Recent activity</h3>
@@ -236,11 +321,11 @@ else
         <thead>
             <tr>
                 <th>Time (UTC)</th>
-                <th>Side</th>
+                <th>Side @Help("BUY: trader opened or added to a position. SELL: trader closed or reduced one. Other types (e.g. REDEEM) are filtered out of this table.")</th>
                 <th>Event</th>
-                <th>Outcome</th>
-                <th class="text-end">Price</th>
-                <th class="text-end">USDC size</th>
+                <th>Outcome @Help("Which side of the market the trade was on.")</th>
+                <th class="text-end">Price @Help("Fill price as a probability (e.g. 42% means 0.42 USDC per share).")</th>
+                <th class="text-end">USDC size @Help("Notional value of the trade in USDC = shares × price.")</th>
             </tr>
         </thead>
         <tbody>
@@ -283,4 +368,67 @@ else
             }
         </tbody>
     </table>
+    await RenderPagerAsync("pa", Model.ActivityPage, Model.ActivityTotal);
+}
+
+@functions {
+    async Task RenderPagerAsync(string queryKey, int currentPage, int totalItems)
+    {
+        var pageSize = PolymtkCp.Pages.Traders.DetailModel.PageSize;
+        var totalPages = totalItems == 0 ? 1 : (int)Math.Ceiling(totalItems / (double)pageSize);
+        if (totalPages <= 1) { return; }
+
+        // Preserve all other pagination params when building links
+        var others = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["pp"] = Model.PositionsPage > 1 ? Model.PositionsPage.ToString() : null,
+            ["pa"] = Model.ActivityPage > 1 ? Model.ActivityPage.ToString() : null,
+            ["pe"] = Model.ExecutionsPage > 1 ? Model.ExecutionsPage.ToString() : null,
+        };
+
+        string Link(int page)
+        {
+            var qs = new Dictionary<string, string?>(others, StringComparer.OrdinalIgnoreCase)
+            {
+                [queryKey] = page > 1 ? page.ToString() : null,
+            };
+            var parts = qs.Where(kv => kv.Value != null).Select(kv => $"{kv.Key}={kv.Value}");
+            var query = string.Join("&", parts);
+            return query.Length == 0 ? "?" : "?" + query;
+        }
+
+        var first = Math.Max(1, currentPage - 2);
+        var last = Math.Min(totalPages, currentPage + 2);
+        var startItem = (currentPage - 1) * pageSize + 1;
+        var endItem = Math.Min(currentPage * pageSize, totalItems);
+
+        <nav class="d-flex justify-content-between align-items-center small" aria-label="pagination">
+            <span class="text-muted">Showing @startItem–@endItem of @totalItems</span>
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
+                    <a class="page-link" href="@Link(currentPage - 1)">‹ Prev</a>
+                </li>
+                @if (first > 1)
+                {
+                    <li class="page-item"><a class="page-link" href="@Link(1)">1</a></li>
+                    @if (first > 2) { <li class="page-item disabled"><span class="page-link">…</span></li> }
+                }
+                @for (int p = first; p <= last; p++)
+                {
+                    <li class="page-item @(p == currentPage ? "active" : "")">
+                        <a class="page-link" href="@Link(p)">@p</a>
+                    </li>
+                }
+                @if (last < totalPages)
+                {
+                    @if (last < totalPages - 1) { <li class="page-item disabled"><span class="page-link">…</span></li> }
+                    <li class="page-item"><a class="page-link" href="@Link(totalPages)">@totalPages</a></li>
+                }
+                <li class="page-item @(currentPage >= totalPages ? "disabled" : "")">
+                    <a class="page-link" href="@Link(currentPage + 1)">Next ›</a>
+                </li>
+            </ul>
+        </nav>
+        await Task.CompletedTask;
+    }
 }

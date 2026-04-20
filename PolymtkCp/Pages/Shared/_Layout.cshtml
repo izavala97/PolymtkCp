@@ -34,6 +34,13 @@
                         </li>
                     </ul>
                     <ul class="navbar-nav">
+                        <li class="nav-item d-flex align-items-center me-2">
+                            <span class="badge rounded-pill text-bg-light border font-monospace"
+                                  data-bs-toggle="tooltip"
+                                  title="Current UTC time — all timestamps in the app are UTC">
+                                <span id="utc-clock">--:--:--</span> UTC
+                            </span>
+                        </li>
                         @if (User.Identity?.IsAuthenticated == true)
                         {
                             <li class="nav-item">
@@ -77,6 +84,27 @@
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
+    <script>
+        // Enable Bootstrap tooltips everywhere (used by the "?" help icons in table headers).
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+                new bootstrap.Tooltip(el);
+            });
+            // UTC clock in navbar
+            var clock = document.getElementById('utc-clock');
+            if (clock) {
+                function tick() {
+                    var d = new Date();
+                    var hh = String(d.getUTCHours()).padStart(2, '0');
+                    var mm = String(d.getUTCMinutes()).padStart(2, '0');
+                    var ss = String(d.getUTCSeconds()).padStart(2, '0');
+                    clock.textContent = hh + ':' + mm + ':' + ss;
+                }
+                tick();
+                setInterval(tick, 1000);
+            }
+        });
+    </script>
 
     @await RenderSectionAsync("Scripts", required: false)
 </body>
