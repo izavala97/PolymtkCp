@@ -21,6 +21,10 @@ public class CopyPlan : BaseModel
     [Column("trader_id")]
     public Guid TraderId { get; set; }
 
+    /// <summary>"paper" (simulated only) or "real" (phase 2: submit to CLOB).</summary>
+    [Column("mode")]
+    public string Mode { get; set; } = "paper";
+
     /// <summary>"fixed" or "percent".</summary>
     [Column("sizing_mode")]
     public string SizingMode { get; set; } = "fixed";

@@ -155,7 +155,7 @@ A "Won" badge on a Polymarket profile means the Trader sold profitably — **not
 ### Next milestone — the watcher (still phase 1)
 
 Build an `IHostedService` that:
-1. Polls each active `copy_plans.trader_id`'s `/activity?user=...` endpoint on an interval (e.g. every 30s)
+1. Polls each active `copy_plans.trader_id`'s `/activity?user=...` endpoint on an interval (default every 10 min)
 2. Diffs against the last seen `transactionHash` for that plan
 3. For each new trade, scales it per the plan (fixed amount or %), enforces daily limits and expiry, and writes a `copy_trade_executions` row with `mode='paper'` and `status='simulated'` or `status='skipped'`
 4. Surfaces results in the existing Detail page history table

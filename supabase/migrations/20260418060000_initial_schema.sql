@@ -77,6 +77,11 @@ create table if not exists public.copy_plans (
     follower_id                     uuid not null references auth.users(id) on delete cascade,
     trader_id                       uuid not null references public.traders(id) on delete cascade,
 
+    -- 'paper' = simulated only (phase 1 / opt-in safety net).
+    -- 'real'  = phase 2 will submit orders to the CLOB on the Follower's behalf.
+    mode                            text not null default 'paper'
+                                        check (mode in ('paper', 'real')),
+
     sizing_mode                     text not null default 'fixed'
                                         check (sizing_mode in ('fixed', 'percent')),
     fixed_amount_usd                numeric(12, 4),

@@ -38,6 +38,10 @@ public class AddModel : PageModel
     public string SizingMode { get; set; } = "fixed";
 
     [BindProperty]
+    [Required]
+    public string Mode { get; set; } = "paper";
+
+    [BindProperty]
     [Range(0.01, 10_000, ErrorMessage = "Must be between $0.01 and $10,000.")]
     public decimal? FixedAmountUsd { get; set; } = 1m;
 
@@ -115,6 +119,7 @@ public class AddModel : PageModel
             {
                 FollowerId = GetFollowerId(),
                 TraderId = trader.Id,
+                Mode = Mode == "real" ? "real" : "paper",
                 SizingMode = SizingMode,
                 FixedAmountUsd = SizingMode == "fixed" ? FixedAmountUsd : null,
                 PercentOfNotional = SizingMode == "percent" ? PercentOfNotional : null,

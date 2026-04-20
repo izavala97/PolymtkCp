@@ -36,6 +36,10 @@ PolymtkCp/
       PolymarketClient.cs             # data-api.polymarket.com (positions, activity, value)
       PolymarketDtos.cs               # JSON DTOs
       PolygonUsdcClient.cs            # eth_call balanceOf for USDC.e on Polygon
+    Watcher/
+      TraderWatcher.cs                # IHostedService polling each active CopyPlan's Trader
+      WatcherSupabase.cs              # SERVICE-ROLE Supabase client (bypasses RLS) used only here
+      WatcherOptions.cs               # Watcher:* config (PollInterval, ActivityPageSize, Enabled)
     SupabaseSessionRefreshMiddleware.cs  # refresh JWT before downstream code runs
     WalletInput.cs                    # parse + normalize wallet input
   Program.cs                          # DI, auth, middleware pipeline, per-request Supabase.Client
@@ -52,12 +56,10 @@ supabase/
 - **`SupabaseSessionRefreshMiddleware`** — refreshes the Supabase access token via `auth/v1/token?grant_type=refresh_token` whenever it's within 2 minutes of expiry, stashes the fresh token in `HttpContext.Items` (consumed by the Supabase factory), and re-issues the auth cookie. Eliminates `PGRST303 JWT expired` after the ~1h token lifetime
 - **Profile + balance display** — `Portfolio = Cash + Positions value`. Cash comes from an on-chain USDC.e `balanceOf(wallet)` `eth_call` to a public Polygon RPC. Positions value comes from Polymarket's `/value` endpoint. Both run in parallel, are 60s-cached, and tolerate partial failure
 - **Traders dashboard** — add/remove Traders, configure sizing/limits/expiry, view per-Trader detail page with copy-plan summary, copy-trade history, open positions, and recent activity. Polymarket deep-links throughout
-
-### In progress (next milestone)
-- **Watcher** (`IHostedService`) — polls `data-api.polymarket.com/activity?user=...` for each active CopyPlan, diffs against the last seen `transactionHash`, scales per plan settings, enforces daily limits / expiry, and writes `copy_trade_executions` rows with `mode='paper'` and `status='simulated'` (or `'skipped'` with a reason)
+- **`TraderWatcher`** (`IHostedService`) — polls each active CopyPlan's Trader on `data-api.polymarket.com/activity?user=...`, diffs against `copy_trade_executions.source_activity_hash`, scales per the plan's sizing (`fixed` or `percent`), enforces daily ops/money limits and expiry, and writes rows with `mode='paper'` and `status='simulated'` (or `'skipped'` with a human-readable reason). Only emits trades that occurred at/after the plan's `created_at` (no historical replay). Runs only when `Supabase:ServiceRoleKey` is set
 
 ### Deferred (phase 2 — trade execution)
-- **Auto-execution service** — places real orders on the Follower's account using their stored, encrypted private key (server signs and submits to the CLOB)
+- **Auto-execution service** — places real orders on the Follower's account using their stored, encrypted private key (server signs and submits to the CLOB). Will read pending `mode='real'` rows produced by an extended watcher
 
 ## Domain glossary
 
@@ -76,7 +78,8 @@ Use these terms consistently in code, database columns, and UI copy.
 - **The server does not handle Polymarket private keys or L2 API credentials in the current phase.** The app is read-only against the public Polymarket APIs. Key storage and order placement land in phase 2 (encrypted at rest via ASP.NET Data Protection + Azure Key Vault)
 - Use `ILogger<T>` injected via constructor for logging
 - Prefer `async`/`await` for all I/O-bound operations (API calls, DB queries)
-- Use the existing per-request `Supabase.Client` (DI scoped) for all DB access. Do **not** instantiate `Supabase.Client` manually — that bypasses the JWT injection and breaks RLS
+- Use the existing per-request `Supabase.Client` (DI scoped) for all DB access **from HTTP request handlers**. Do **not** instantiate `Supabase.Client` manually — that bypasses the JWT injection and breaks RLS
+- The watcher is the only place that uses the SERVICE ROLE key (`WatcherSupabase`). Don't introduce other consumers of the service-role client; if you need cross-Follower data outside the watcher, write a SECURITY DEFINER SQL function instead
 - Supabase model PKs that you actually want to send in INSERTs (e.g. `FollowerProfile.FollowerId = auth.uid()`) must use `[PrimaryKey("col", true)]`. The default `false` excludes the PK from INSERT bodies (it's intended for DB-generated identity columns)
 
 ## Key External APIs
@@ -131,6 +134,30 @@ Never edit a migration after it has been pushed — add a new one instead.
 ### Dev-only reset
 
 `supabase/reset-dev.sql` drops the four app tables + the `set_updated_at()` function + the migration history rows for the consolidated initial schema. Paste it into the Supabase Dashboard → SQL Editor when you want to wipe and re-apply from scratch. **Never run this in production.**
+
+## Watcher configuration
+
+The `TraderWatcher` background service is registered conditionally based on `appsettings`:
+
+```jsonc
+{
+  "Supabase": {
+    "Url": "https://<ref>.supabase.co",
+    "AnonKey": "...",            // for the per-request client
+    "ServiceRoleKey": "..."      // REQUIRED for the watcher to start
+  },
+  "Watcher": {
+    "Enabled": true,
+    "PollInterval": "00:10:00",  // TimeSpan
+    "ActivityPageSize": 50
+  }
+}
+```
+
+- The service-role key bypasses RLS — keep it in User Secrets / env vars, never commit it
+- If `ServiceRoleKey` is missing, the app starts normally but the watcher is skipped (a startup log line says so)
+- The watcher only emits copy-trades that occurred **at or after** the plan's `created_at`, so adding a new plan does not retroactively flood the history with the trader's last 50 trades
+- All emitted rows are `mode='paper'` in phase 1. Real-mode emission ships with the phase-2 executor
 # Polymarket Copy-Trading Platform
 
 ASP.NET Core Razor Pages app (.NET 10) for copying trades of successful Polymarket traders.

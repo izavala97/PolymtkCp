@@ -25,6 +25,20 @@
     <div class="card-body">
         <h5 class="card-title">Your copy plan</h5>
         <dl class="row mb-0 small">
+            <dt class="col-sm-3">Mode</dt>
+            <dd class="col-sm-9">
+                @if (Model.Plan.Mode == "real")
+                {
+                    <span class="badge bg-warning text-dark">REAL</span>
+                    <span class="text-muted small">orders submitted on your behalf (phase 2)</span>
+                }
+                else
+                {
+                    <span class="badge bg-secondary">PAPER</span>
+                    <span class="text-muted small">simulated only — nothing is sent to Polymarket</span>
+                }
+            </dd>
+
             <dt class="col-sm-3">Sizing</dt>
             <dd class="col-sm-9">
                 @if (Model.Plan.SizingMode == "fixed")

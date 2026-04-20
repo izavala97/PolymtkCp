@@ -41,12 +41,56 @@ builder.Services.AddHttpClient<PolymtkCp.Services.Polymarket.PolymarketClient>(c
 // Polygon RPC client (reads on-chain USDC.e balance = Polymarket "Cash")
 builder.Services.AddHttpClient<PolymtkCp.Services.Polymarket.PolygonUsdcClient>(c =>
 {
-    c.BaseAddress = new Uri(builder.Configuration["Polygon:RpcUrl"]
-        ?? PolymtkCp.Services.Polymarket.PolygonUsdcClient.DefaultRpcUrl);
+    var rpcUrl = builder.Configuration["Polygon:RpcUrl"];
+    if (string.IsNullOrWhiteSpace(rpcUrl))
+        rpcUrl = PolymtkCp.Services.Polymarket.PolygonUsdcClient.DefaultRpcUrl;
+    c.BaseAddress = new Uri(rpcUrl);
     c.Timeout = TimeSpan.FromSeconds(15);
     c.DefaultRequestHeaders.UserAgent.ParseAdd("PolymtkCp/0.1");
     c.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 });
+
+// ---------------------------------------------------------------------------
+// Trader-activity watcher (background service).
+// Uses the Supabase SERVICE ROLE key so it can read every Follower's plans
+// and write copy_trade_executions across all rows (bypasses RLS). Only this
+// background service should ever use the service-role client. HTTP request
+// code paths must keep using the per-request Supabase.Client above.
+// ---------------------------------------------------------------------------
+builder.Services.Configure<PolymtkCp.Services.Watcher.WatcherOptions>(
+    builder.Configuration.GetSection(PolymtkCp.Services.Watcher.WatcherOptions.SectionName));
+
+var watcherOpts = builder.Configuration
+    .GetSection(PolymtkCp.Services.Watcher.WatcherOptions.SectionName)
+    .Get<PolymtkCp.Services.Watcher.WatcherOptions>()
+    ?? new PolymtkCp.Services.Watcher.WatcherOptions();
+var serviceRoleKey = builder.Configuration["Supabase:ServiceRoleKey"];
+
+if (watcherOpts.Enabled && !string.IsNullOrEmpty(serviceRoleKey))
+{
+    builder.Services.AddSingleton(_ =>
+    {
+        var client = new Supabase.Client(supabaseUrl, serviceRoleKey, new Supabase.SupabaseOptions
+        {
+            AutoConnectRealtime = false,
+        });
+        // Service role goes in the Authorization header for PostgREST writes.
+        client.Postgrest.GetHeaders = () => new Dictionary<string, string>
+        {
+            ["apikey"] = serviceRoleKey,
+            ["Authorization"] = $"Bearer {serviceRoleKey}",
+        };
+        return new PolymtkCp.Services.Watcher.WatcherSupabase(client);
+    });
+    builder.Services.AddHostedService<PolymtkCp.Services.Watcher.TraderWatcher>();
+}
+else
+{
+    // Surface a single startup log line; don't crash a dev environment that
+    // hasn't been wired up yet.
+    builder.Logging.AddFilter("PolymtkCp.Services.Watcher", LogLevel.Information);
+    Console.WriteLine("[startup] TraderWatcher disabled (Supabase:ServiceRoleKey missing or Watcher:Enabled=false).");
+}
 
 // Cookie-based authentication backed by Supabase Auth
 builder.Services.AddAuthentication("Cookies")

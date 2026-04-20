@@ -35,6 +35,26 @@
             </fieldset>
 
             <fieldset class="mb-4">
+                <legend class="h5">Mode</legend>
+                <div class="mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" asp-for="Mode" value="paper" id="modePaper" />
+                        <label class="form-check-label" for="modePaper">
+                            <strong>Paper</strong> &mdash; simulated only. Records what would have been copied. <span class="badge bg-secondary">Recommended</span>
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" asp-for="Mode" value="real" id="modeReal" disabled />
+                        <label class="form-check-label text-muted" for="modeReal">
+                            <strong>Real</strong> &mdash; submit orders to Polymarket on your behalf.
+                            <span class="badge bg-warning text-dark">Phase 2</span>
+                            <span class="small">Requires storing your Polymarket private key (not yet supported).</span>
+                        </label>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="mb-4">
                 <legend class="h5">Sizing</legend>
 
                 <div class="mb-3">

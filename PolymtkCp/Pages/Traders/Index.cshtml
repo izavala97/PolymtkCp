@@ -27,6 +27,7 @@ else
             <tr>
                 <th>Nickname</th>
                 <th>Wallet</th>
+                <th>Mode</th>
                 <th>Sizing</th>
                 <th>Daily limits</th>
                 <th>Expires</th>
@@ -52,6 +53,16 @@ else
                         else
                         {
                             <code class="small">(missing)</code>
+                        }
+                    </td>
+                    <td>
+                        @if (p.Mode == "real")
+                        {
+                            <span class="badge bg-warning text-dark">REAL</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">PAPER</span>
                         }
                     </td>
                     <td>
