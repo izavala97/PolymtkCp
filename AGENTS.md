@@ -56,7 +56,7 @@ supabase/
 - **`SupabaseSessionRefreshMiddleware`** — refreshes the Supabase access token via `auth/v1/token?grant_type=refresh_token` whenever it's within 2 minutes of expiry, stashes the fresh token in `HttpContext.Items` (consumed by the Supabase factory), and re-issues the auth cookie. Eliminates `PGRST303 JWT expired` after the ~1h token lifetime
 - **Profile + balance display** — `Portfolio = Cash + Positions value`. Cash comes from an on-chain USDC.e `balanceOf(wallet)` `eth_call` to a public Polygon RPC. Positions value comes from Polymarket's `/value` endpoint. Both run in parallel, are 60s-cached, and tolerate partial failure
 - **Traders dashboard** — add/remove Traders, configure sizing/limits/expiry, view per-Trader detail page with copy-plan summary, copy-trade history, open positions, and recent activity. Polymarket deep-links throughout
-- **`TraderWatcher`** (`IHostedService`) — polls each active CopyPlan's Trader on `data-api.polymarket.com/activity?user=...`, diffs against `copy_trade_executions.source_activity_hash`, scales per the plan's sizing (`fixed` or `percent`), enforces daily ops/money limits and expiry, and writes rows with `mode='paper'` and `status='simulated'` (or `'skipped'` with a human-readable reason). Only emits trades that occurred at/after the plan's `created_at` (no historical replay). Runs only when `Supabase:ServiceRoleKey` is set
+- **`TraderWatcher`** (`IHostedService`) — polls each active CopyPlan's Trader on `data-api.polymarket.com/activity?user=...`, diffs against `copy_trade_executions.source_activity_hash`, scales per the plan's sizing (`fixed` or `percent`), enforces daily ops/money limits and expiry, and writes rows with `mode='paper'` and `status='simulated'` (or `'skipped'` with a human-readable reason). Only emits trades that occurred at/after the plan's `created_at` (no historical replay). Runs only when `Supabase:SecretKey` is set
 
 ### Deferred (phase 2 — trade execution)
 - **Auto-execution service** — places real orders on the Follower's account using their stored, encrypted private key (server signs and submits to the CLOB). Will read pending `mode='real'` rows produced by an extended watcher
@@ -103,7 +103,8 @@ See [README.md](README.md) for the full feature spec, position lifecycle, and co
 
 - `traders` — shared across all Followers (one row per wallet). Authenticated users can read/insert/update; deletion is not allowed from the app
 - `copy_plans` — one row per (Follower, Trader). Standard own-row RLS via `auth.uid() = follower_id`
-- `follower_profiles` — one row per Follower (`follower_id` PK). Holds `polymarket_wallet_address`. `encrypted_api_key` reserved for phase 2
+- `follower_profiles` — one row per Follower (`follower_id` PK). Holds `polymarket_wallet_address`
+- `follower_secrets` — append-only versioned store of encrypted Polymarket L2 API credentials (api_key + secret + passphrase). Ciphertext is ASP.NET Data Protection output (KEK in Azure Key Vault). At most one `is_active=true` row per follower (partial unique index). No DELETE policy — rows are audit history. Reserved for the phase-2 executor; not read by phase-1 watcher
 - `copy_trade_executions` — append-only log of copy-trade decisions; `event_title`/`outcome`/`slug` are denormalized for fast rendering. Own-row RLS; no DELETE policy
 
 All tables have `created_at` / `updated_at` timestamps; the `set_updated_at()` trigger maintains `updated_at` on every update.
@@ -143,8 +144,8 @@ The `TraderWatcher` background service is registered conditionally based on `app
 {
   "Supabase": {
     "Url": "https://<ref>.supabase.co",
-    "AnonKey": "...",            // for the per-request client
-    "ServiceRoleKey": "..."      // REQUIRED for the watcher to start
+    "PublishableKey": "...",     // sb_publishable_…
+    "SecretKey": "..."           // sb_secret_… — REQUIRED for the watcher to start
   },
   "Watcher": {
     "Enabled": true,
@@ -154,10 +155,28 @@ The `TraderWatcher` background service is registered conditionally based on `app
 }
 ```
 
-- The service-role key bypasses RLS — keep it in User Secrets / env vars, never commit it
-- If `ServiceRoleKey` is missing, the app starts normally but the watcher is skipped (a startup log line says so)
+- The secret key bypasses RLS — keep it in User Secrets / env vars, never commit it
+- If `SecretKey` is missing, the app starts normally but the watcher is skipped (a startup log line says so)
 - The watcher only emits copy-trades that occurred **at or after** the plan's `created_at`, so adding a new plan does not retroactively flood the history with the trader's last 50 trades
 - All emitted rows are `mode='paper'` in phase 1. Real-mode emission ships with the phase-2 executor
+
+### Data Protection (encrypted Polymarket credentials)
+
+`follower_secrets.ciphertext` is produced by ASP.NET Data Protection. The Data Protection key ring is auto-rotated by the framework (default ~90 days). In production, the ring is persisted to Azure Blob Storage and each key is wrapped (KEK) by an Azure Key Vault key:
+
+```jsonc
+{
+  "DataProtection": {
+    "BlobStorageUri": "https://<account>.blob.core.windows.net/<container>/keys.xml",
+    "KeyVaultKeyId":  "https://<vault>.vault.azure.net/keys/<key-name>"
+  }
+}
+```
+
+- Auth uses `DefaultAzureCredential` (works locally with `az login`, in Azure with managed identity)
+- If either key is missing in **Development**, Data Protection falls back to the local file system with no KEK and logs a startup warning. Acceptable for dev only
+- If either key is missing in **Production**, app startup throws — by design
+- Rotation: only the DP key ring auto-rotates. Existing `follower_secrets` ciphertext is **not** bulk re-encrypted; old DP keys remain in the ring as decrypt-only. Rotating the Key Vault KEK itself is a separate manual operation (Key Vault key versioning)
 # Polymarket Copy-Trading Platform
 
 ASP.NET Core Razor Pages app (.NET 10) for copying trades of successful Polymarket traders.

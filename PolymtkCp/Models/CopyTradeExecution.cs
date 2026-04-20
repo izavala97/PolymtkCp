@@ -72,9 +72,9 @@ public class CopyTradeExecution : BaseModel
     [Column("executed_at")]
     public DateTime? ExecutedAt { get; set; }
 
-    [Column("created_at")]
+    [Column("created_at", ignoreOnInsert: true, ignoreOnUpdate: true)]
     public DateTime CreatedAt { get; set; }
 
-    [Column("updated_at")]
+    [Column("updated_at", ignoreOnInsert: true, ignoreOnUpdate: true)]
     public DateTime UpdatedAt { get; set; }
 }

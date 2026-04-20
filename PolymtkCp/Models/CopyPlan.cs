@@ -53,9 +53,9 @@ public class CopyPlan : BaseModel
     [Column("is_active")]
     public bool IsActive { get; set; } = true;
 
-    [Column("created_at")]
+    [Column("created_at", ignoreOnInsert: true, ignoreOnUpdate: true)]
     public DateTime CreatedAt { get; set; }
 
-    [Column("updated_at")]
+    [Column("updated_at", ignoreOnInsert: true, ignoreOnUpdate: true)]
     public DateTime UpdatedAt { get; set; }
 }

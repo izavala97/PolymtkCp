@@ -1,8 +1,11 @@
+using Microsoft.AspNetCore.DataProtection;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Supabase config
+// Supabase config (publishable + secret keys; see https://supabase.com/docs/guides/api/api-keys).
 var supabaseUrl = builder.Configuration["Supabase:Url"] ?? throw new InvalidOperationException("Supabase:Url is not configured.");
-var supabaseKey = builder.Configuration["Supabase:AnonKey"] ?? throw new InvalidOperationException("Supabase:AnonKey is not configured.");
+var supabaseKey = builder.Configuration["Supabase:PublishableKey"]
+    ?? throw new InvalidOperationException("Supabase:PublishableKey is not configured.");
 
 // Per-request Supabase client. Per the official docs (server-side wiki),
 // we create a fresh client per request and pass the user's JWT through
@@ -64,7 +67,7 @@ var watcherOpts = builder.Configuration
     .GetSection(PolymtkCp.Services.Watcher.WatcherOptions.SectionName)
     .Get<PolymtkCp.Services.Watcher.WatcherOptions>()
     ?? new PolymtkCp.Services.Watcher.WatcherOptions();
-var serviceRoleKey = builder.Configuration["Supabase:ServiceRoleKey"];
+var serviceRoleKey = builder.Configuration["Supabase:SecretKey"];
 
 if (watcherOpts.Enabled && !string.IsNullOrEmpty(serviceRoleKey))
 {
@@ -89,8 +92,45 @@ else
     // Surface a single startup log line; don't crash a dev environment that
     // hasn't been wired up yet.
     builder.Logging.AddFilter("PolymtkCp.Services.Watcher", LogLevel.Information);
-    Console.WriteLine("[startup] TraderWatcher disabled (Supabase:ServiceRoleKey missing or Watcher:Enabled=false).");
+    Console.WriteLine("[startup] TraderWatcher disabled (Supabase:SecretKey missing or Watcher:Enabled=false).");
 }
+
+// ---------------------------------------------------------------------------
+// ASP.NET Data Protection — encrypts per-Follower Polymarket L2 credentials
+// at rest. In production: key ring persisted to Azure Blob Storage, wrapped
+// (KEK) by an Azure Key Vault key. Auto-rotation every 90 days is the
+// Data Protection default. In dev: falls back to the local file system with
+// no KEK if either config key is missing — logged loudly, blocked in
+// production.
+// ---------------------------------------------------------------------------
+{
+    var blobUri  = builder.Configuration["DataProtection:BlobStorageUri"];
+    var kvKeyId  = builder.Configuration["DataProtection:KeyVaultKeyId"];
+    var dpBuilder = builder.Services.AddDataProtection().SetApplicationName("PolymtkCp");
+
+    if (!string.IsNullOrWhiteSpace(blobUri) && !string.IsNullOrWhiteSpace(kvKeyId))
+    {
+        var credential = new Azure.Identity.DefaultAzureCredential();
+        dpBuilder
+            .PersistKeysToAzureBlobStorage(new Uri(blobUri), credential)
+            .ProtectKeysWithAzureKeyVault(new Uri(kvKeyId), credential);
+    }
+    else
+    {
+        if (builder.Environment.IsProduction())
+        {
+            throw new InvalidOperationException(
+                "Data Protection is not configured. In production, both " +
+                "DataProtection:BlobStorageUri and DataProtection:KeyVaultKeyId must be set.");
+        }
+        Console.WriteLine(
+            "[startup] WARNING: Data Protection running in DEV fallback mode " +
+            "(local file system, no KEK). Do NOT ship this configuration.");
+    }
+}
+
+builder.Services.AddScoped<PolymtkCp.Services.Secrets.IFollowerSecretStore,
+                          PolymtkCp.Services.Secrets.FollowerSecretStore>();
 
 // Cookie-based authentication backed by Supabase Auth
 builder.Services.AddAuthentication("Cookies")

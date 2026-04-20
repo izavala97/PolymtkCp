@@ -7,6 +7,7 @@ using PolymtkCp.Filters;
 using PolymtkCp.Models;
 using PolymtkCp.Services;
 using PolymtkCp.Services.Polymarket;
+using PolymtkCp.Services.Secrets;
 
 namespace PolymtkCp.Pages.Account;
 
@@ -15,6 +16,7 @@ public class ProfileModel : PageModel
     private readonly Supabase.Client _supabase;
     private readonly PolymarketClient _polymarket;
     private readonly PolygonUsdcClient _polygon;
+    private readonly IFollowerSecretStore _secretStore;
     private readonly IMemoryCache _cache;
     private readonly ILogger<ProfileModel> _logger;
 
@@ -22,12 +24,14 @@ public class ProfileModel : PageModel
         Supabase.Client supabase,
         PolymarketClient polymarket,
         PolygonUsdcClient polygon,
+        IFollowerSecretStore secretStore,
         IMemoryCache cache,
         ILogger<ProfileModel> logger)
     {
         _supabase = supabase;
         _polymarket = polymarket;
         _polygon = polygon;
+        _secretStore = secretStore;
         _cache = cache;
         _logger = logger;
     }
@@ -35,6 +39,17 @@ public class ProfileModel : PageModel
     [BindProperty]
     [Display(Name = "Polymarket wallet address or profile URL")]
     public string? WalletInputText { get; set; }
+
+    [BindProperty, Display(Name = "API key")]
+    public string? CredApiKey { get; set; }
+
+    [BindProperty, Display(Name = "API secret")]
+    public string? CredSecret { get; set; }
+
+    [BindProperty, Display(Name = "API passphrase")]
+    public string? CredPassphrase { get; set; }
+
+    public FollowerSecretStatus? CredentialsStatus { get; private set; }
 
     [BindProperty(SupportsGet = true)]
     public string? Reason { get; set; }
@@ -143,6 +158,61 @@ public class ProfileModel : PageModel
         return Page();
     }
 
+    public async Task<IActionResult> OnPostSaveCredentialsAsync()
+    {
+        var followerId = GetFollowerId();
+
+        var apiKey     = (CredApiKey ?? string.Empty).Trim();
+        var secret     = (CredSecret ?? string.Empty).Trim();
+        var passphrase = (CredPassphrase ?? string.Empty).Trim();
+
+        if (apiKey.Length == 0 || secret.Length == 0 || passphrase.Length == 0)
+        {
+            ErrorMessage = "All three credential fields are required.";
+            await LoadAsync();
+            return Page();
+        }
+        if (apiKey.Length > 512 || secret.Length > 512 || passphrase.Length > 512)
+        {
+            ErrorMessage = "Credential fields must be 512 characters or fewer.";
+            await LoadAsync();
+            return Page();
+        }
+
+        try
+        {
+            await _secretStore.SetAsync(followerId, new PolymarketCredentials(apiKey, secret, passphrase));
+            StatusMessage = "Polymarket credentials saved.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save Polymarket credentials for {FollowerId}.", followerId);
+            ErrorMessage = "Could not save credentials. Please try again.";
+        }
+
+        // Clear posted secrets from the model so they don't round-trip back to the browser.
+        CredApiKey = CredSecret = CredPassphrase = null;
+        await LoadAsync();
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostClearCredentialsAsync()
+    {
+        var followerId = GetFollowerId();
+        try
+        {
+            await _secretStore.ClearAsync(followerId);
+            StatusMessage = "Polymarket credentials cleared.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to clear Polymarket credentials for {FollowerId}.", followerId);
+            ErrorMessage = "Could not clear credentials. Please try again.";
+        }
+        await LoadAsync();
+        return Page();
+    }
+
     private async Task LoadAsync()
     {
         Email = User.FindFirst(ClaimTypes.Email)?.Value;
@@ -169,6 +239,15 @@ public class ProfileModel : PageModel
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Profile load failed for {FollowerId}.", followerId);
+        }
+
+        try
+        {
+            CredentialsStatus = await _secretStore.GetStatusAsync(followerId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Credentials status load failed for {FollowerId}.", followerId);
         }
     }
 

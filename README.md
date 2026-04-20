@@ -105,7 +105,8 @@ Schema lives in `supabase/migrations/` as raw SQL (no EF Core). Today everything
 |-------|---------|-----|
 | `traders` | Shared cache of public Polymarket wallets (one row per wallet) | All authenticated users can SELECT/INSERT/UPDATE; no DELETE |
 | `copy_plans` | Per-(Follower, Trader) copy configuration | Standard own-row via `auth.uid() = follower_id` |
-| `follower_profiles` | One row per Follower; holds `polymarket_wallet_address`. `encrypted_api_key` is reserved for phase 2 | Standard own-row via `auth.uid() = follower_id` |
+| `follower_profiles` | One row per Follower; holds `polymarket_wallet_address` | Standard own-row via `auth.uid() = follower_id` |
+| `follower_secrets` | Append-only versioned, encrypted Polymarket L2 API credentials (phase-2 executor). Ciphertext via ASP.NET Data Protection (KEK in Azure Key Vault) | Own-row select/insert/update; no DELETE policy (audit history) |
 | `copy_trade_executions` | Append-only log of copy-trade decisions; `event_title`/`outcome`/`slug` are denormalized for fast rendering | Own-row SELECT/INSERT/UPDATE; no DELETE |
 
 All tables have `created_at`/`updated_at`; the `set_updated_at()` trigger maintains `updated_at` on every UPDATE. Indexes are added on FK columns and `created_at desc` for the executions log.

@@ -18,13 +18,9 @@ public class FollowerProfile : BaseModel
     [Column("polymarket_wallet_address")]
     public string? PolymarketWalletAddress { get; set; }
 
-    /// <summary>Reserved for phase 2 trade execution. Always null today.</summary>
-    [Column("encrypted_api_key")]
-    public string? EncryptedApiKey { get; set; }
-
-    [Column("created_at")]
+    [Column("created_at", ignoreOnInsert: true, ignoreOnUpdate: true)]
     public DateTime CreatedAt { get; set; }
 
-    [Column("updated_at")]
+    [Column("updated_at", ignoreOnInsert: true, ignoreOnUpdate: true)]
     public DateTime UpdatedAt { get; set; }
 }
