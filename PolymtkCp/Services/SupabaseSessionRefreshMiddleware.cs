@@ -78,8 +78,8 @@ public sealed class SupabaseSessionRefreshMiddleware
         string refreshToken, CancellationToken ct)
     {
         var url = _config["Supabase:Url"];
-        var anonKey = _config["Supabase:AnonKey"];
-        if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(anonKey))
+        var apiKey = _config["Supabase:PublishableKey"];
+        if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(apiKey))
             return null;
 
         try
@@ -89,7 +89,7 @@ public sealed class SupabaseSessionRefreshMiddleware
             using var req = new HttpRequestMessage(
                 HttpMethod.Post,
                 $"{url.TrimEnd('/')}/auth/v1/token?grant_type=refresh_token");
-            req.Headers.Add("apikey", anonKey);
+            req.Headers.Add("apikey", apiKey);
             req.Content = JsonContent.Create(new { refresh_token = refreshToken });
 
             using var resp = await http.SendAsync(req, ct);

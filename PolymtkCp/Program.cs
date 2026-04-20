@@ -141,7 +141,34 @@ builder.Services.AddAuthentication("Cookies")
         options.AccessDeniedPath = "/Account/Login";
         options.ExpireTimeSpan = TimeSpan.FromDays(7);
         options.SlidingExpiration = true;
+        // Harden auth cookie: always over HTTPS in non-dev, not accessible from JS,
+        // and SameSite=Lax so third-party iframes can't replay it while keeping
+        // same-site POSTs (login form -> home) working.
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
     });
+
+// Rate limiting for sensitive auth / credential endpoints. .NET's built-in
+// System.Threading.RateLimiting; strict buckets on login + credential save,
+// wider bucket everywhere else so normal browsing stays snappy.
+builder.Services.AddRateLimiter(opts =>
+{
+    opts.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Strict: 10 attempts / 5 min per IP for auth + credential writes.
+    opts.AddPolicy("auth-strict", httpCtx =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpCtx.Connection.RemoteIpAddress?.ToString() ?? "anon",
+            factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(5),
+                QueueLimit = 0,
+            }));
+});
 
 // Add services to the container.
 builder.Services.AddMemoryCache();
@@ -152,6 +179,20 @@ builder.Services.AddRazorPages(opts =>
 {
     opts.Conventions.AuthorizeFolder("/Traders");
     opts.Conventions.AuthorizePage("/Account/Profile");
+    // Throttle brute-force attempts on auth + credential-write pages.
+    foreach (var path in new[]
+    {
+        "/Account/Login",
+        "/Account/Register",
+        "/Account/ForgotPassword",
+        "/Account/ResetPassword",
+        "/Account/Profile",
+    })
+    {
+        opts.Conventions.AddPageApplicationModelConvention(path, model =>
+            model.EndpointMetadata.Add(
+                new Microsoft.AspNetCore.RateLimiting.EnableRateLimitingAttribute("auth-strict")));
+    }
 });
 
 var app = builder.Build();
@@ -169,7 +210,22 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
+// Baseline security response headers. Framework-agnostic, cheap, and prevents
+// a class of clickjacking / MIME-sniff / referrer-leak attacks that otherwise
+// depend on client defaults.
+app.Use(async (ctx, next) =>
+{
+    var h = ctx.Response.Headers;
+    h["X-Content-Type-Options"] = "nosniff";
+    h["Referrer-Policy"]        = "strict-origin-when-cross-origin";
+    h["X-Frame-Options"]        = "DENY";
+    h["Permissions-Policy"]     = "geolocation=(), microphone=(), camera=()";
+    await next();
+});
+
 app.UseRouting();
+
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseMiddleware<PolymtkCp.Services.SupabaseSessionRefreshMiddleware>();
