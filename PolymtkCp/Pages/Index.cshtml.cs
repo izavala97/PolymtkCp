@@ -45,11 +45,16 @@ public class IndexModel : PageModel
 
     /// <summary>Date labels for the cumulative-deployed-$ chart x-axis (last 30d).</summary>
     public IReadOnlyList<string> ChartLabels { get; private set; } = [];
-    /// <summary>Cumulative simulated $ deployed per day, aligned with ChartLabels.</summary>
-    public IReadOnlyList<decimal> ChartCumulativeUsdc { get; private set; } = [];
+    /// <summary>Cumulative paper (simulated) $ deployed per day, aligned with ChartLabels.</summary>
+    public IReadOnlyList<decimal> ChartPaperCumulativeUsdc { get; private set; } = [];
+    /// <summary>Cumulative real (submitted/filled) $ deployed per day, aligned with ChartLabels.</summary>
+    public IReadOnlyList<decimal> ChartRealCumulativeUsdc { get; private set; } = [];
 
-    public int TotalSimulatedTrades { get; private set; }
-    public decimal TotalSimulatedUsdc { get; private set; }
+    public int TotalPaperTrades { get; private set; }
+    public decimal TotalPaperUsdc { get; private set; }
+    public int TotalRealTrades { get; private set; }
+    public decimal TotalRealUsdc { get; private set; }
+    public bool HasRealTrades => TotalRealTrades > 0;
 
     public async Task OnGetAsync()
     {
@@ -113,28 +118,41 @@ public class IndexModel : PageModel
             var rows = resp.Models;
 
             RecentExecutions = rows.Take(10).ToList();
-            var simulated = rows.Where(r => r.Status == "simulated").ToList();
-            TotalSimulatedTrades = simulated.Count;
-            TotalSimulatedUsdc = simulated.Sum(r => r.SizeUsdc);
 
-            // Build a per-day cumulative deployed-$ series for the chart.
+            // "paper" = mode paper + status simulated (phase 1 default).
+            // "real"  = mode real + status that reflects capital deployed (submitted / filled).
+            var paper = rows.Where(r => r.Mode == "paper" && r.Status == "simulated").ToList();
+            var real = rows.Where(r => r.Mode == "real"
+                                       && (r.Status == "submitted" || r.Status == "filled")).ToList();
+
+            TotalPaperTrades = paper.Count;
+            TotalPaperUsdc = paper.Sum(r => r.SizeUsdc);
+            TotalRealTrades = real.Count;
+            TotalRealUsdc = real.Sum(r => r.SizeUsdc);
+
+            // Build per-day cumulative deployed-$ series for each mode.
             var today = DateTime.UtcNow.Date;
             var labels = new List<string>(30);
-            var values = new List<decimal>(30);
-            var perDay = simulated
-                .GroupBy(r => r.CreatedAt.Date)
+            var paperValues = new List<decimal>(30);
+            var realValues = new List<decimal>(30);
+            var paperPerDay = paper.GroupBy(r => r.CreatedAt.Date)
+                .ToDictionary(g => g.Key, g => g.Sum(r => r.SizeUsdc));
+            var realPerDay = real.GroupBy(r => r.CreatedAt.Date)
                 .ToDictionary(g => g.Key, g => g.Sum(r => r.SizeUsdc));
 
-            decimal running = 0m;
+            decimal paperRunning = 0m, realRunning = 0m;
             for (var i = 29; i >= 0; i--)
             {
                 var day = today.AddDays(-i);
                 labels.Add(day.ToString("MM-dd"));
-                if (perDay.TryGetValue(day, out var dayTotal)) running += dayTotal;
-                values.Add(running);
+                if (paperPerDay.TryGetValue(day, out var pDay)) paperRunning += pDay;
+                if (realPerDay.TryGetValue(day, out var rDay)) realRunning += rDay;
+                paperValues.Add(paperRunning);
+                realValues.Add(realRunning);
             }
             ChartLabels = labels;
-            ChartCumulativeUsdc = values;
+            ChartPaperCumulativeUsdc = paperValues;
+            ChartRealCumulativeUsdc = realValues;
         }
         catch (Exception ex)
         {

@@ -45,6 +45,14 @@ public class CopyPlan : BaseModel
     [Column("daily_trade_money_limit")]
     public decimal? DailyTradeMoneyLimit { get; set; }
 
+    /// <summary>
+    /// If set (&gt;= 2), collapse runs of adjacent same-(asset, side) fills into chunks of N;
+    /// only the first fill in each chunk emits a simulated copy-trade (sized normally), and
+    /// the rest are recorded as skipped with reason='grouped'. Null = no grouping.
+    /// </summary>
+    [Column("group_similar_ops")]
+    public int? GroupSimilarOps { get; set; }
+
     /// <summary>When the plan stops copying. Null = never expires.</summary>
     [Column("expires_at")]
     public DateTime? ExpiresAt { get; set; }

@@ -60,6 +60,11 @@ public class AddModel : PageModel
     public decimal? DailyTradeMoneyLimit { get; set; }
 
     [BindProperty]
+    [Range(2, 1000, ErrorMessage = "Must be between 2 and 1000.")]
+    [Display(Name = "Group similar ops (N)")]
+    public int? GroupSimilarOps { get; set; }
+
+    [BindProperty]
     [DataType(DataType.Date)]
     [Display(Name = "Plan expires on")]
     public DateTime? ExpiresAt { get; set; }
@@ -125,6 +130,7 @@ public class AddModel : PageModel
                 PercentOfNotional = SizingMode == "percent" ? PercentOfNotional : null,
                 DailyTradeOperationsLimit = DailyTradeOperationsLimit,
                 DailyTradeMoneyLimit = DailyTradeMoneyLimit,
+                GroupSimilarOps = GroupSimilarOps,
                 ExpiresAt = ExpiresAt is { } d ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : null,
                 IsActive = true,
             };

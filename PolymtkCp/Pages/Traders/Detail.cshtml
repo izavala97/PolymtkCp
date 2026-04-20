@@ -23,7 +23,10 @@
 
 <div class="card mb-4">
     <div class="card-body">
-        <h5 class="card-title">Your copy plan</h5>
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <h5 class="card-title mb-0">Your copy plan</h5>
+            <a asp-page="Edit" asp-route-id="@Model.Plan.Id" class="btn btn-sm btn-outline-primary">Edit</a>
+        </div>
         <dl class="row mb-0 small">
             <dt class="col-sm-3">Mode</dt>
             <dd class="col-sm-9">
@@ -56,6 +59,18 @@
 
             <dt class="col-sm-3">Daily money limit</dt>
             <dd class="col-sm-9">@(Model.Plan.DailyTradeMoneyLimit is decimal m ? $"${m:N2}" : "none")</dd>
+
+            <dt class="col-sm-3">Group similar ops</dt>
+            <dd class="col-sm-9">
+                @if (Model.Plan.GroupSimilarOps is int n)
+                {
+                    <text>every @n adjacent same-market same-side fills &rarr; 1 copy-trade</text>
+                }
+                else
+                {
+                    <text>disabled (every fill copied individually)</text>
+                }
+            </dd>
 
             <dt class="col-sm-3">Expires</dt>
             <dd class="col-sm-9">@(Model.Plan.ExpiresAt?.ToString("u") ?? "never")</dd>

@@ -55,6 +55,18 @@ public class CopyTradeExecution : BaseModel
     [Column("size_usdc")]
     public decimal SizeUsdc { get; set; }
 
+    /// <summary>Trader's original fill price. Preserved for future P&amp;L reconstruction / backtests.</summary>
+    [Column("source_price")]
+    public decimal? SourcePrice { get; set; }
+
+    /// <summary>Trader's original fill size in shares.</summary>
+    [Column("source_size_shares")]
+    public decimal? SourceSizeShares { get; set; }
+
+    /// <summary>Trader's original fill notional in USDC.</summary>
+    [Column("source_size_usdc")]
+    public decimal? SourceSizeUsdc { get; set; }
+
     [Column("event_title")]
     public string? EventTitle { get; set; }
 

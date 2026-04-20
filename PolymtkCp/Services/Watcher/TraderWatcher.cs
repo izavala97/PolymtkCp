@@ -152,10 +152,87 @@ public sealed class TraderWatcher : BackgroundService
         var todayCount = todayApplied.Count;
         var todayMoney = todayApplied.Sum(r => r.SizeUsdc);
 
+        // Grouping: if plan.GroupSimilarOps = N, collapse runs of adjacent same-(asset, side)
+        // fills into chunks of N. Only the first fill of each chunk is "eligible" to emit a
+        // simulated copy-trade; the rest are forced to skipped with reason='grouped'.
+        // The leader's copied size is multiplied by its chunk size so collapsing preserves
+        // total volume (e.g. N=2 over 4 fills emits 2 copies of 2x base size, not 2 copies
+        // of 1x — otherwise accumulating in small chunks and exiting in one big order would
+        // asymmetrically under-sell the follower's position).
+        // We still insert one row per source hash to preserve 1:1 dedup across ticks.
+        var groupedHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var leaderMultiplier = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        // For chunk leaders: aggregate source size across the chunk, so the persisted row is
+        // auto-consistent — its copy size and its recorded source size represent the same
+        // chunk. Followers (skipped/grouped) keep their individual fill data for audit.
+        var leaderChunkAggregate =
+            new Dictionary<string, (decimal Shares, decimal Usdc, decimal Vwap)>(StringComparer.OrdinalIgnoreCase);
+        if (plan.GroupSimilarOps is int groupN && groupN >= 2)
+        {
+            var runStart = 0;
+            for (var i = 1; i <= fresh.Count; i++)
+            {
+                var endOfRun = i == fresh.Count
+                    || fresh[i].Asset != fresh[runStart].Asset
+                    || fresh[i].Side != fresh[runStart].Side;
+                if (!endOfRun) continue;
+
+                // fresh[runStart..i) is one run of same (asset, side); split into chunks of N.
+                for (var chunkStart = runStart; chunkStart < i; chunkStart += groupN)
+                {
+                    var chunkEnd = Math.Min(chunkStart + groupN, i);
+                    var chunkSize = chunkEnd - chunkStart;
+                    var leaderHash = fresh[chunkStart].TransactionHash!;
+                    leaderMultiplier[leaderHash] = chunkSize;
+
+                    decimal chunkShares = 0m, chunkUsdc = 0m;
+                    for (var j = chunkStart; j < chunkEnd; j++)
+                    {
+                        chunkShares += fresh[j].Size;
+                        chunkUsdc += fresh[j].UsdcSize;
+                        if (j > chunkStart)
+                            groupedHashes.Add(fresh[j].TransactionHash!);
+                    }
+                    var chunkVwap = chunkShares > 0 ? Math.Round(chunkUsdc / chunkShares, 6) : 0m;
+                    leaderChunkAggregate[leaderHash] = (chunkShares, chunkUsdc, chunkVwap);
+                }
+                runStart = i;
+            }
+        }
+
         foreach (var t in fresh)
         {
-            var (status, reason, sizeUsdc, sizeShares) =
-                Decide(plan, t, todayCount, todayMoney);
+            string status;
+            string? reason;
+            decimal sizeUsdc;
+            decimal sizeShares;
+
+            if (groupedHashes.Contains(t.TransactionHash!))
+            {
+                // Forced skip: this fill is absorbed into its chunk's leader.
+                status = "skipped";
+                reason = $"grouped (N={plan.GroupSimilarOps})";
+                sizeUsdc = 0m;
+                sizeShares = 0m;
+            }
+            else
+            {
+                var mult = leaderMultiplier.TryGetValue(t.TransactionHash!, out var m) ? m : 1;
+                (status, reason, sizeUsdc, sizeShares) =
+                    Decide(plan, t, todayCount, todayMoney, mult);
+            }
+
+            // Source amounts: for chunk leaders we store the chunk's aggregate so the
+            // row is self-describing; grouped followers keep their individual fill data.
+            decimal srcPrice = t.Price;
+            decimal srcShares = t.Size;
+            decimal srcUsdc = t.UsdcSize;
+            if (leaderChunkAggregate.TryGetValue(t.TransactionHash!, out var agg))
+            {
+                srcShares = agg.Shares;
+                srcUsdc = agg.Usdc;
+                srcPrice = agg.Vwap;
+            }
 
             var row = new CopyTradeExecution
             {
@@ -171,6 +248,9 @@ public sealed class TraderWatcher : BackgroundService
                 Price = t.Price,
                 SizeShares = sizeShares,
                 SizeUsdc = sizeUsdc,
+                SourcePrice = srcPrice,
+                SourceSizeShares = srcShares,
+                SourceSizeUsdc = srcUsdc,
                 EventTitle = t.Title,
                 Outcome = t.Outcome,
                 Slug = t.Slug,
@@ -199,16 +279,22 @@ public sealed class TraderWatcher : BackgroundService
     }
 
     /// <summary>Plan + trade -> (status, reason, sizeUsdc, sizeShares).</summary>
+    /// <param name="sizeMultiplier">
+    /// When &gt; 1, the emitted size is scaled up to represent this many adjacent
+    /// same-(asset, side) fills collapsed into one copy-trade (see grouping logic).
+    /// </param>
     private static (string Status, string? Reason, decimal SizeUsdc, decimal SizeShares)
-        Decide(CopyPlan plan, PolymarketActivity t, int todayCount, decimal todayMoney)
+        Decide(CopyPlan plan, PolymarketActivity t, int todayCount, decimal todayMoney,
+            int sizeMultiplier = 1)
     {
         // Sizing
-        decimal sizeUsdc = plan.SizingMode switch
+        decimal baseSize = plan.SizingMode switch
         {
             "fixed" => plan.FixedAmountUsd ?? 0m,
             "percent" => Math.Round(t.UsdcSize * (plan.PercentOfNotional ?? 0m) / 100m, 4),
             _ => 0m,
         };
+        decimal sizeUsdc = baseSize * sizeMultiplier;
 
         // Validity gates → skip with a human-readable reason
         if (sizeUsdc <= 0)
@@ -217,12 +303,27 @@ public sealed class TraderWatcher : BackgroundService
             return ("skipped", "Source trade missing asset id", sizeUsdc, 0m);
         if (plan.DailyTradeOperationsLimit is int opMax && todayCount >= opMax)
             return ("skipped", $"Daily ops limit ({opMax}) reached", sizeUsdc, 0m);
-        if (plan.DailyTradeMoneyLimit is decimal moneyMax && todayMoney + sizeUsdc > moneyMax)
-            return ("skipped", $"Daily money limit (${moneyMax:N2}) would be exceeded", sizeUsdc, 0m);
+
+        // Daily money limit: trim to what's left instead of skipping the whole order,
+        // so the Follower still mirrors direction even when the budget is almost spent.
+        // Skip only if nothing remains. Same pattern applies in phase 2 when we cap by
+        // real balance (cash for BUY, shares-held for SELL).
+        string? trimReason = null;
+        if (plan.DailyTradeMoneyLimit is decimal moneyMax)
+        {
+            var remaining = moneyMax - todayMoney;
+            if (remaining <= 0)
+                return ("skipped", $"Daily money limit (${moneyMax:N2}) reached", sizeUsdc, 0m);
+            if (sizeUsdc > remaining)
+            {
+                trimReason = $"trimmed to daily money limit (${moneyMax:N2})";
+                sizeUsdc = Math.Round(remaining, 4);
+            }
+        }
 
         decimal sizeShares = t.Price > 0
             ? Math.Round(sizeUsdc / t.Price, 6)
             : 0m;
-        return ("simulated", null, sizeUsdc, sizeShares);
+        return ("simulated", trimReason, sizeUsdc, sizeShares);
     }
 }

@@ -1,37 +1,38 @@
-@page
-@model PolymtkCp.Pages.Traders.AddModel
+@page "{id:guid}"
+@model PolymtkCp.Pages.Traders.EditModel
 @{
-    ViewData["Title"] = "Add trader";
+    ViewData["Title"] = "Edit copy plan";
 }
+
+<a asp-page="Detail" asp-route-id="@Model.PlanId" class="btn btn-link mb-3 ps-0">&larr; Back to trader</a>
 
 <div class="row justify-content-center">
     <div class="col-md-7">
-        <h2 class="mb-4">Copy a new trader</h2>
+        <h2 class="mb-1">Edit copy plan</h2>
+        @if (Model.TraderLabel is not null)
+        {
+            <p class="text-muted small mb-4">for @Model.TraderLabel</p>
+        }
 
         @if (!string.IsNullOrEmpty(Model.ErrorMessage))
         {
             <div class="alert alert-danger">@Model.ErrorMessage</div>
         }
+        @if (!string.IsNullOrEmpty(Model.SuccessMessage))
+        {
+            <div class="alert alert-success">@Model.SuccessMessage</div>
+        }
 
         <form method="post">
             <fieldset class="mb-4">
-                <legend class="h5">Trader</legend>
-
-                <div class="mb-3">
-                    <label asp-for="WalletInputText" class="form-label">Wallet address or Polymarket profile URL</label>
-                    <input asp-for="WalletInputText" class="form-control"
-                           placeholder="0x... or https://polymarket.com/profile/0x..." />
-                    <span asp-validation-for="WalletInputText" class="text-danger small"></span>
-                    <div class="form-text">
-                        Find this on the trader's Polymarket profile (the address shown under their avatar).
-                    </div>
+                <legend class="h5">Status</legend>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" asp-for="IsActive" id="isActive" />
+                    <label class="form-check-label" for="isActive">
+                        <strong>Active</strong> &mdash; watcher emits copy-trades for this plan
+                    </label>
                 </div>
-
-                <div class="mb-3">
-                    <label asp-for="Nickname" class="form-label">Nickname (optional)</label>
-                    <input asp-for="Nickname" class="form-control" placeholder="e.g. Smart Money" />
-                    <div class="form-text">Shared display name. Used by everyone copying this trader.</div>
-                </div>
+                <div class="form-text">Toggle off to pause copying without deleting the plan.</div>
             </fieldset>
 
             <fieldset class="mb-4">
@@ -40,15 +41,14 @@
                     <div class="form-check">
                         <input class="form-check-input" type="radio" asp-for="Mode" value="paper" id="modePaper" />
                         <label class="form-check-label" for="modePaper">
-                            <strong>Paper</strong> &mdash; simulated only. Records what would have been copied. <span class="badge bg-secondary">Recommended</span>
+                            <strong>Paper</strong> &mdash; simulated only.
                         </label>
                     </div>
                     <div class="form-check">
                         <input class="form-check-input" type="radio" asp-for="Mode" value="real" id="modeReal" disabled />
                         <label class="form-check-label text-muted" for="modeReal">
-                            <strong>Real</strong> &mdash; submit orders to Polymarket on your behalf.
+                            <strong>Real</strong> &mdash; orders submitted on your behalf.
                             <span class="badge bg-warning text-dark">Phase 2</span>
-                            <span class="small">Requires storing your Polymarket private key (not yet supported).</span>
                         </label>
                     </div>
                 </div>
@@ -84,24 +84,18 @@
 
             <fieldset class="mb-4">
                 <legend class="h5">Daily limits (optional)</legend>
-                <p class="form-text mt-0">
-                    Either, both, or neither may be set. Whichever limit is reached first pauses copying for the rest of the UTC day.
-                </p>
-
                 <div class="row">
                     <div class="col-md-6 mb-3">
                         <label asp-for="DailyTradeOperationsLimit" class="form-label"></label>
-                        <input asp-for="DailyTradeOperationsLimit" type="number" min="1" class="form-control"
-                               placeholder="e.g. 10" />
+                        <input asp-for="DailyTradeOperationsLimit" type="number" min="1" class="form-control" />
                         <span asp-validation-for="DailyTradeOperationsLimit" class="text-danger small"></span>
-                        <div class="form-text">Max number of copy-trades per day.</div>
+                        <div class="form-text">Max number of copy-trades per day. Empty = no cap.</div>
                     </div>
                     <div class="col-md-6 mb-3">
                         <label asp-for="DailyTradeMoneyLimit" class="form-label"></label>
-                        <input asp-for="DailyTradeMoneyLimit" type="number" step="0.01" min="0" class="form-control"
-                               placeholder="e.g. 100" />
+                        <input asp-for="DailyTradeMoneyLimit" type="number" step="0.01" min="0" class="form-control" />
                         <span asp-validation-for="DailyTradeMoneyLimit" class="text-danger small"></span>
-                        <div class="form-text">Max USDC spent on copy-trades per day.</div>
+                        <div class="form-text">Max USDC spent on copy-trades per day. Empty = no cap.</div>
                     </div>
                 </div>
             </fieldset>
@@ -114,17 +108,13 @@
                            placeholder="e.g. 5 — leave empty to disable" />
                     <span asp-validation-for="GroupSimilarOps" class="text-danger small"></span>
                     <div class="form-text">
-                        When the trader splits one order into a burst of same-market same-side fills,
-                        collapse every <strong>N</strong> adjacent fills into a single copy-trade.
-                        The emitted copy's size is multiplied by the chunk size, so volume is preserved.
-                        Example: with N=5, 10 fills produce 2 simulated trades instead of 10.
-                        Leave empty to copy every fill individually.
+                        Collapse every N adjacent same-market same-side fills into 1 copy-trade.
+                        The emitted copy's size is multiplied by the chunk size so volume is preserved.
                     </div>
                     <div class="alert alert-warning small mt-2 mb-0">
                         <strong>Heads up:</strong> with <code>fixed</code> sizing, if the trader accumulates in
                         many small fills and exits in one big order (or vice-versa), your copies will be
-                        unbalanced — e.g. 4× BUY $1 + 1× SELL $1 leaves you 75% long after the trader has
-                        fully exited. <code>percent</code> sizing mirrors the trader's proportions and avoids this.
+                        unbalanced. <code>percent</code> sizing mirrors the trader's proportions and avoids this.
                     </div>
                 </div>
             </fieldset>
@@ -135,13 +125,13 @@
                     <label asp-for="ExpiresAt" class="form-label"></label>
                     <input asp-for="ExpiresAt" class="form-control" />
                     <span asp-validation-for="ExpiresAt" class="text-danger small"></span>
-                    <div class="form-text">After this date, copying stops automatically. Leave empty for no expiration.</div>
+                    <div class="form-text">Empty = no expiration.</div>
                 </div>
             </fieldset>
 
             <div class="d-flex gap-2">
-                <button type="submit" class="btn btn-primary">Start copying</button>
-                <a asp-page="Index" class="btn btn-outline-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">Save changes</button>
+                <a asp-page="Detail" asp-route-id="@Model.PlanId" class="btn btn-outline-secondary">Cancel</a>
             </div>
         </form>
     </div>
@@ -153,14 +143,12 @@
         (function () {
             const radios = document.querySelectorAll('input[name="SizingMode"]');
             const fields = document.querySelectorAll('[data-sizing-field]');
-
             function sync() {
                 const selected = document.querySelector('input[name="SizingMode"]:checked')?.value;
                 fields.forEach(el => {
                     el.classList.toggle('d-none', el.dataset.sizingField !== selected);
                 });
             }
-
             radios.forEach(r => r.addEventListener('change', sync));
             sync();
         })();
