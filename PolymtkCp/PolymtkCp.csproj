@@ -11,6 +11,16 @@
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.1" />
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.1" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <!--
+      Pinned explicitly to 10.0.5 to override the transitive 8.0.16 that
+      Azure.Extensions.AspNetCore.DataProtection.* still drag in. The 8.x
+      line pulls System.Security.Cryptography.Xml 8.0.2, which has
+      high-severity advisories GHSA-37gx-xxp4-5rgx and GHSA-w3x6-4m5h-cxqf
+      (NU1903). NU1510 ("package is in the shared framework") is silenced
+      because removing the reference would re-introduce the vulnerable
+      transitive.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="10.0.5" NoWarn="NU1510" />
     <PackageReference Include="Nethereum.ABI" Version="6.1.0" />
     <PackageReference Include="Nethereum.Signer" Version="6.1.0" />
     <PackageReference Include="Supabase" Version="1.1.1" />
