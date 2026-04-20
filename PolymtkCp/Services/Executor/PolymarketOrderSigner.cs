@@ -60,16 +60,7 @@ public static class PolymarketOrderSigner
     /// </summary>
     public static string Sign(SignedOrderData order, bool negRisk, int chainId, string privateKeyHex)
     {
-        var verifyingContract = negRisk ? ExchangeAddressNegRisk : ExchangeAddressRegular;
-        var domainName = negRisk ? DomainNameNegRisk : DomainNameRegular;
-
-        var domainSeparator = ComputeDomainSeparator(domainName, DomainVersion, chainId, verifyingContract);
-        var orderHash = ComputeOrderHash(order);
-
-        // EIP-712 final digest: keccak256(0x1901 || domainSeparator || hashStruct(order))
-        var prefix = new byte[] { 0x19, 0x01 };
-        var digest = Keccak.CalculateHash(Concat(prefix, domainSeparator, orderHash));
-
+        var digest = ComputeDigest(order, negRisk, chainId);
         var signer = new EthECKey(privateKeyHex);
         var sig = signer.SignAndCalculateV(digest);
 
@@ -79,6 +70,24 @@ public static class PolymarketOrderSigner
         Array.Copy(PadTo32(sig.S), 0, signature, 32, 32);
         signature[64] = sig.V[0];
         return "0x" + Convert.ToHexString(signature).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Compute just the EIP-712 digest (without signing) for the given order under
+    /// the given domain. Exposed publicly for unit tests that want to verify the
+    /// signature recovers the expected signer address.
+    /// </summary>
+    public static byte[] ComputeDigest(SignedOrderData order, bool negRisk, int chainId)
+    {
+        var verifyingContract = negRisk ? ExchangeAddressNegRisk : ExchangeAddressRegular;
+        var domainName = negRisk ? DomainNameNegRisk : DomainNameRegular;
+
+        var domainSeparator = ComputeDomainSeparator(domainName, DomainVersion, chainId, verifyingContract);
+        var orderHash = ComputeOrderHash(order);
+
+        // EIP-712 final digest: keccak256(0x1901 || domainSeparator || hashStruct(order))
+        var prefix = new byte[] { 0x19, 0x01 };
+        return Keccak.CalculateHash(Concat(prefix, domainSeparator, orderHash));
     }
 
     /// <summary>Generate a fresh 256-bit random salt as a positive BigInteger.</summary>

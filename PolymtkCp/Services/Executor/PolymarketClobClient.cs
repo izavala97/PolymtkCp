@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -182,40 +181,16 @@ public sealed class PolymarketClobClient
     private static void ApplyL2Headers(HttpRequestMessage req, PolymarketCredentials creds,
         string funderAddress, string method, string path, string body)
     {
-        // Per py-clob-client signing/hmac.py:
-        //   secret = base64-urlsafe-decode(creds.Secret)
-        //   message = timestamp + method + requestPath + body  (with "'" replaced by '"')
-        //   signature = base64-urlsafe-encode(HMAC-SHA256(secret, message))
-        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-        var normalizedBody = body.Replace("'", "\"");
-        var message = timestamp + method + path + normalizedBody;
+        var headers = PolymarketHmacAuth.Build(
+            creds.ApiKey, creds.Secret, creds.Passphrase,
+            funderAddress, method, path, body);
 
-        var key = Base64UrlDecode(creds.Secret);
-        using var hmac = new HMACSHA256(key);
-        var digest = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
-        var signature = Base64UrlEncode(digest);
-
-        req.Headers.TryAddWithoutValidation("POLY_ADDRESS", funderAddress);
-        req.Headers.TryAddWithoutValidation("POLY_SIGNATURE", signature);
-        req.Headers.TryAddWithoutValidation("POLY_TIMESTAMP", timestamp);
-        req.Headers.TryAddWithoutValidation("POLY_API_KEY", creds.ApiKey);
-        req.Headers.TryAddWithoutValidation("POLY_PASSPHRASE", creds.Passphrase);
+        req.Headers.TryAddWithoutValidation("POLY_ADDRESS", headers.Address);
+        req.Headers.TryAddWithoutValidation("POLY_SIGNATURE", headers.Signature);
+        req.Headers.TryAddWithoutValidation("POLY_TIMESTAMP", headers.Timestamp);
+        req.Headers.TryAddWithoutValidation("POLY_API_KEY", headers.ApiKey);
+        req.Headers.TryAddWithoutValidation("POLY_PASSPHRASE", headers.Passphrase);
     }
-
-    private static byte[] Base64UrlDecode(string input)
-    {
-        // urlsafe variant uses '-' and '_' instead of '+' and '/'.
-        var s = input.Replace('-', '+').Replace('_', '/');
-        switch (s.Length % 4)
-        {
-            case 2: s += "=="; break;
-            case 3: s += "="; break;
-        }
-        return Convert.FromBase64String(s);
-    }
-
-    private static string Base64UrlEncode(byte[] bytes) =>
-        Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_');
 
     private static string? TryExtractOrderId(string body)
     {

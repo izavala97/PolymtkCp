@@ -23,11 +23,21 @@ jobs:
         with:
           dotnet-version: '10.x'
 
-      - name: Build with dotnet
-        run: dotnet build --configuration Release
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build (Release)
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test
+        # Tests must pass before we publish or deploy. The build above already
+        # produced the test assemblies, so --no-build keeps the step fast.
+        run: dotnet test PolymtkCp.Tests/PolymtkCp.Tests.csproj --configuration Release --no-build --nologo --verbosity normal
 
       - name: dotnet publish
-        run: dotnet publish -c Release -o ${{env.DOTNET_ROOT}}/myapp
+        # Scope publish to the web project so the test project (and its xUnit
+        # runner DLLs) never end up in the artifact uploaded to App Service.
+        run: dotnet publish PolymtkCp/PolymtkCp.csproj -c Release --no-build -o ${{env.DOTNET_ROOT}}/myapp
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
