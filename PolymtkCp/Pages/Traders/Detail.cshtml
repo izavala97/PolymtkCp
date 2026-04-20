@@ -177,6 +177,53 @@ else
 
 <h3 class="mt-4">Last 30 days</h3>
 
+@if (Model.SkillStats is { DataAvailable: true } ss && ss.Sample > 0)
+{
+    <div class="card border-0 bg-light mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex flex-wrap align-items-center gap-3">
+                <div>
+                    <div class="text-muted small">
+                        Resolved win rate
+                        @Help("Wins = distinct markets the trader cashed out (REDEEM events). Losses = open positions worth $0 (resolved against them, never redeemed). Approximation, not exact realized PnL — but far more honest than total profit.")
+                    </div>
+                    <div class="h4 mb-0 @(ss.WinRate >= 0.55m ? "text-success" : ss.WinRate >= 0.45m ? "" : "text-danger")">
+                        @(ss.WinRate is { } wr ? wr.ToString("P0") : "—")
+                    </div>
+                </div>
+                <div>
+                    <div class="text-muted small">Wins</div>
+                    <div class="h5 mb-0 text-success">@ss.WinCount</div>
+                </div>
+                <div>
+                    <div class="text-muted small">Losses</div>
+                    <div class="h5 mb-0 text-danger">@ss.LossCount</div>
+                </div>
+                <div>
+                    <div class="text-muted small">Redeemed (USDC)</div>
+                    <div class="h5 mb-0">$@ss.RedeemedUsdc.ToString("N0")</div>
+                </div>
+                <div>
+                    <div class="text-muted small">Lost on resolution</div>
+                    <div class="h5 mb-0 text-danger">-$@ss.LostUsdc.ToString("N0")</div>
+                </div>
+                <div>
+                    <div class="text-muted small">Net resolved</div>
+                    <div class="h5 mb-0 @(ss.NetResolvedUsdc >= 0 ? "text-success" : "text-danger")">
+                        @(ss.NetResolvedUsdc >= 0 ? "+" : "")$@ss.NetResolvedUsdc.ToString("N0")
+                    </div>
+                </div>
+            </div>
+            @if (ss.Sample < 10)
+            {
+                <div class="small text-muted mt-2">
+                    <em>Small sample (@ss.Sample resolved markets)</em> — treat win rate as a hint, not a verdict.
+                </div>
+            }
+        </div>
+    </div>
+}
+
 @{
     var s = Model.Stats30d;
     var hasActivity = s.TradeCount > 0 || s.RedeemUsdc > 0;

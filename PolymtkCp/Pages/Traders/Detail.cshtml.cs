@@ -10,15 +10,18 @@ public class DetailModel : PageModel
 {
     private readonly Supabase.Client _supabase;
     private readonly PolymarketClient _polymarket;
+    private readonly TraderStatsService _stats;
     private readonly ILogger<DetailModel> _logger;
 
     public DetailModel(
         Supabase.Client supabase,
         PolymarketClient polymarket,
+        TraderStatsService stats,
         ILogger<DetailModel> logger)
     {
         _supabase = supabase;
         _polymarket = polymarket;
+        _stats = stats;
         _logger = logger;
     }
 
@@ -28,6 +31,7 @@ public class DetailModel : PageModel
     public IReadOnlyList<PolymarketActivity> Activity { get; private set; } = [];
     public IReadOnlyList<CopyTradeExecution> Executions { get; private set; } = [];
     public ActivityStats Stats30d { get; private set; } = new();
+    public TraderStatsService.TraderStats? SkillStats { get; private set; }
     public string? ErrorMessage { get; set; }
 
     public const int PageSize = 20;
@@ -136,6 +140,15 @@ public class DetailModel : PageModel
         {
             _logger.LogError(ex, "Polymarket lookup failed for {Wallet}.", Trader.WalletAddress);
             ErrorMessage = "Could not load live data from Polymarket.";
+        }
+
+        try
+        {
+            SkillStats = await _stats.GetAsync(Trader.WalletAddress, HttpContext.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Skill stats lookup failed for {Wallet}.", Trader.WalletAddress);
         }
 
         return Page();

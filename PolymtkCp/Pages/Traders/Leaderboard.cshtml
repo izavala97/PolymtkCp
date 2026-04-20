@@ -1,0 +1,135 @@
+@page
+@model PolymtkCp.Pages.Traders.LeaderboardModel
+@{
+    ViewData["Title"] = "Trader leaderboard";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h2 class="mb-0">Leaderboard</h2>
+    <a asp-page="Index" class="btn btn-link">← Your traders</a>
+</div>
+
+<p class="text-muted small mb-3">
+    Our own ranking of every trader anyone on this app has added, scored by
+    <strong>resolved win rate</strong> (skill, not raw profit). Stats are cached for ~15 minutes.
+    Win rate is computed from REDEEM events vs. resolved-loser open positions on the public Polymarket API.
+    <em>Not financial advice.</em>
+</p>
+
+<form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+        <label class="form-label small mb-0">Sort by</label>
+        <select name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="winrate" selected="@(Model.Sort == "winrate")">Win rate</option>
+            <option value="net" selected="@(Model.Sort == "net")">Net resolved $</option>
+            <option value="volume" selected="@(Model.Sort == "volume")">Trade volume (30d)</option>
+            <option value="wins" selected="@(Model.Sort == "wins")">Win count</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small mb-0">Min sample (resolved markets)</label>
+        <input type="number" name="min" min="0" max="500" value="@Model.MinSample"
+               class="form-control form-control-sm" style="width: 100px"
+               onchange="this.form.submit()" />
+    </div>
+    <div class="col-auto">
+        <div class="form-check mt-3">
+            <input type="checkbox" name="active" value="true" class="form-check-input"
+                   id="active-only" checked="@Model.ActiveOnly"
+                   onchange="this.form.submit()" />
+            <label class="form-check-label small" for="active-only">Active only (traded in last 7d)</label>
+        </div>
+    </div>
+</form>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+@if (Model.Rows.Count == 0)
+{
+    <div class="alert alert-info">
+        No traders match the current filters. Try lowering the minimum sample, or
+        <a asp-page="Add" class="alert-link">add more traders</a> for the leaderboard to score.
+    </div>
+}
+else
+{
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Trader</th>
+                <th class="text-end">Win rate</th>
+                <th class="text-end">Wins</th>
+                <th class="text-end">Losses</th>
+                <th class="text-end">Net resolved</th>
+                <th class="text-end">Trades 30d</th>
+                <th>Last seen</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @{ var rank = 1; }
+            @foreach (var r in Model.Rows)
+            {
+                var s = r.Stats;
+                <tr>
+                    <td class="text-muted">@rank</td>
+                    <td>
+                        <div>@(r.Trader.Nickname ?? "—")</div>
+                        <a href="https://polymarket.com/profile/@r.Trader.WalletAddress" target="_blank" rel="noopener">
+                            <code class="small">@r.Trader.WalletAddress.Substring(0, 10)…@r.Trader.WalletAddress[^6..]</code>
+                        </a>
+                    </td>
+                    <td class="text-end fw-bold @(s.WinRate >= 0.55m ? "text-success" : s.WinRate >= 0.45m ? "" : "text-danger")">
+                        @(s.WinRate is { } wr ? wr.ToString("P0") : "—")
+                    </td>
+                    <td class="text-end text-success">@s.WinCount</td>
+                    <td class="text-end text-danger">@s.LossCount</td>
+                    <td class="text-end @(s.NetResolvedUsdc >= 0 ? "text-success" : "text-danger")">
+                        @(s.NetResolvedUsdc >= 0 ? "+" : "")$@s.NetResolvedUsdc.ToString("N0")
+                    </td>
+                    <td class="text-end">@s.TradeCount30d</td>
+                    <td class="small">
+                        @if (s.LastTradeAt is { } lt)
+                        {
+                            var delta = DateTimeOffset.UtcNow - lt;
+                            string txt = delta.TotalHours < 1 ? $"{(int)delta.TotalMinutes}m ago"
+                                       : delta.TotalDays < 1 ? $"{(int)delta.TotalHours}h ago"
+                                       : $"{(int)delta.TotalDays}d ago";
+                            string cls = delta.TotalDays <= 1 ? "bg-success"
+                                       : delta.TotalDays <= 7 ? "bg-warning text-dark"
+                                       : "bg-danger";
+                            <span class="badge @cls">@txt</span>
+                        }
+                        else
+                        {
+                            <span class="text-muted">never</span>
+                        }
+                    </td>
+                    <td class="text-end">
+                        @if (r.AlreadyCopied)
+                        {
+                            <span class="badge bg-secondary">Copied</span>
+                        }
+                        else
+                        {
+                            <a asp-page="Add" asp-route-wallet="@r.Trader.WalletAddress"
+                               class="btn btn-sm btn-outline-primary">Copy</a>
+                        }
+                    </td>
+                </tr>
+                rank++;
+            }
+        </tbody>
+    </table>
+
+    <p class="small text-muted">
+        <strong>How to read this:</strong> Win rate &gt; 55% (green) is unusually skilled;
+        45–55% is roughly random; below 45% (red) is consistently losing. Always cross-check
+        against <em>net resolved $</em> — high win rate on small bets is less impressive than
+        moderate win rate on large bets. And always start in <strong>PAPER</strong> mode.
+    </p>
+}

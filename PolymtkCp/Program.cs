@@ -172,6 +172,7 @@ builder.Services.AddRateLimiter(opts =>
 
 // Add services to the container.
 builder.Services.AddMemoryCache();
+builder.Services.AddScoped<PolymtkCp.Services.Polymarket.TraderStatsService>();
 builder.Services.AddScoped<PolymtkCp.Filters.RequireWalletPageFilter>();
 builder.Services.Configure<Microsoft.AspNetCore.Mvc.MvcOptions>(o =>
     o.Filters.AddService<PolymtkCp.Filters.RequireWalletPageFilter>());

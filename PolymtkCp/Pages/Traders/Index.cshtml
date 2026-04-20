@@ -6,7 +6,10 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2>Traders you copy</h2>
-    <a asp-page="Add" class="btn btn-primary">+ Add trader</a>
+    <div class="d-flex gap-2">
+        <a asp-page="Leaderboard" class="btn btn-outline-primary">View leaderboard</a>
+        <a asp-page="Add" class="btn btn-primary">+ Add trader</a>
+    </div>
 </div>
 
 @if (!string.IsNullOrEmpty(Model.ErrorMessage))

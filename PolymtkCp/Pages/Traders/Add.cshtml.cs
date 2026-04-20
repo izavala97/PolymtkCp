@@ -71,7 +71,11 @@ public class AddModel : PageModel
 
     public string? ErrorMessage { get; set; }
 
-    public void OnGet() { }
+    public void OnGet(string? wallet = null)
+    {
+        if (!string.IsNullOrWhiteSpace(wallet))
+            WalletInputText = wallet;
+    }
 
     public async Task<IActionResult> OnPostAsync()
     {
