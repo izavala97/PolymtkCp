@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using PolymtkCp.Models;
 using PolymtkCp.Services;
 using PolymtkCp.Services.Polymarket;
+using PolymtkCp.Services.Secrets;
 
 namespace PolymtkCp.Pages.Traders;
 
@@ -12,17 +13,27 @@ public class AddModel : PageModel
 {
     private readonly Supabase.Client _supabase;
     private readonly PolymarketClient _polymarket;
+    private readonly IFollowerSecretStore _secretStore;
     private readonly ILogger<AddModel> _logger;
 
     public AddModel(
         Supabase.Client supabase,
         PolymarketClient polymarket,
+        IFollowerSecretStore secretStore,
         ILogger<AddModel> logger)
     {
         _supabase = supabase;
         _polymarket = polymarket;
+        _secretStore = secretStore;
         _logger = logger;
     }
+
+    /// <summary>
+    /// True only when the Follower has saved an L2 triple AND a wallet private
+    /// key. Drives the Real-mode radio in the view; also enforced server-side
+    /// in <see cref="OnPostAsync"/>. Mirrors the gate in <c>EditModel</c>.
+    /// </summary>
+    public bool RealModeAvailable { get; private set; }
 
     [BindProperty]
     [Required(ErrorMessage = "Wallet address or profile URL is required.")]
@@ -71,14 +82,18 @@ public class AddModel : PageModel
 
     public string? ErrorMessage { get; set; }
 
-    public void OnGet(string? wallet = null)
+    public async Task OnGetAsync(string? wallet = null)
     {
         if (!string.IsNullOrWhiteSpace(wallet))
             WalletInputText = wallet;
+        await LoadRealModeAvailabilityAsync(GetFollowerId());
     }
 
     public async Task<IActionResult> OnPostAsync()
     {
+        var followerId = GetFollowerId();
+        await LoadRealModeAvailabilityAsync(followerId);
+
         // Cross-field validation: the chosen sizing mode requires its corresponding amount.
         if (SizingMode == "fixed" && FixedAmountUsd is null or <= 0)
             ModelState.AddModelError(nameof(FixedAmountUsd), "Required when using fixed sizing.");
@@ -91,6 +106,15 @@ public class AddModel : PageModel
         var address = WalletInput.TryExtractAddress(WalletInputText);
         if (address is null)
             ModelState.AddModelError(nameof(WalletInputText), "Could not find a 0x wallet address in your input.");
+
+        // Server-side gate: don't trust the client. If Real mode isn't available,
+        // silently coerce back to paper rather than 400'ing — this also handles
+        // the user revoking credentials between page load and form submit.
+        if (Mode == "real" && !RealModeAvailable)
+        {
+            Mode = "paper";
+            ErrorMessage = "Real mode requires saved Polymarket credentials including a wallet private key. Plan created in Paper mode.";
+        }
 
         if (!ModelState.IsValid)
             return Page();
@@ -126,7 +150,7 @@ public class AddModel : PageModel
         {
             var plan = new CopyPlan
             {
-                FollowerId = GetFollowerId(),
+                FollowerId = followerId,
                 TraderId = trader.Id,
                 Mode = Mode == "real" ? "real" : "paper",
                 SizingMode = SizingMode,
@@ -184,6 +208,20 @@ public class AddModel : PageModel
         });
 
         return inserted.Models.Single();
+    }
+
+    private async Task LoadRealModeAvailabilityAsync(Guid followerId)
+    {
+        try
+        {
+            var status = await _secretStore.GetStatusAsync(followerId);
+            RealModeAvailable = status.HasActive && status.HasPrivateKey;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Add: failed to load secret status for {FollowerId}.", followerId);
+            RealModeAvailable = false;
+        }
     }
 
     private Guid GetFollowerId()

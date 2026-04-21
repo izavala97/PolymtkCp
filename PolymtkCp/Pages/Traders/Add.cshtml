@@ -44,11 +44,17 @@
                         </label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="radio" asp-for="Mode" value="real" id="modeReal" disabled />
-                        <label class="form-check-label text-muted" for="modeReal">
+                        <input class="form-check-input" type="radio" asp-for="Mode" value="real" id="modeReal"
+                               disabled="@(!Model.RealModeAvailable)" />
+                        <label class="form-check-label @(Model.RealModeAvailable ? "" : "text-muted")" for="modeReal">
                             <strong>Real</strong> &mdash; submit orders to Polymarket on your behalf.
-                            <span class="badge bg-warning text-dark">Phase 2</span>
-                            <span class="small">Requires storing your Polymarket private key (not yet supported).</span>
+                            @if (!Model.RealModeAvailable)
+                            {
+                                <span class="small">
+                                    Add your Polymarket L2 credentials and wallet private key on
+                                    <a asp-page="/Account/Profile">your profile</a> to enable.
+                                </span>
+                            }
                         </label>
                     </div>
                 </div>
