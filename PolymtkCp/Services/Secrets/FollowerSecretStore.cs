@@ -35,12 +35,18 @@ public sealed class FollowerSecretStore : IFollowerSecretStore
 
     public async Task<FollowerSecretStatus> GetStatusAsync(Guid followerId, CancellationToken ct = default)
     {
-        var active = await _supabase
+        // Use typed Where on the boolean column (the string-based
+        // Filter("is_active", Equals, true) does not always serialize the
+        // boolean correctly in the Supabase SDK, which causes .Single() to
+        // see >1 row and silently return null — making the UI report
+        // "Not configured" even when an active row exists).
+        var rows = await _supabase
             .From<FollowerSecret>()
-            .Where(s => s.FollowerId == followerId)
-            .Filter("is_active", Constants.Operator.Equals, true)
-            .Single();
+            .Where(s => s.FollowerId == followerId && s.IsActive)
+            .Limit(1)
+            .Get(ct);
 
+        var active = rows.Models.FirstOrDefault();
         if (active is null)
             return new FollowerSecretStatus(false, null, null, false);
 
@@ -110,12 +116,13 @@ public sealed class FollowerSecretStore : IFollowerSecretStore
 
     public async Task<PolymarketCredentials?> GetActiveAsync(Guid followerId, CancellationToken ct = default)
     {
-        var active = await _supabase
+        var rows = await _supabase
             .From<FollowerSecret>()
-            .Where(s => s.FollowerId == followerId)
-            .Filter("is_active", Constants.Operator.Equals, true)
-            .Single();
+            .Where(s => s.FollowerId == followerId && s.IsActive)
+            .Limit(1)
+            .Get(ct);
 
+        var active = rows.Models.FirstOrDefault();
         if (active is null) return null;
 
         try
@@ -136,8 +143,7 @@ public sealed class FollowerSecretStore : IFollowerSecretStore
     {
         await _supabase
             .From<FollowerSecret>()
-            .Where(s => s.FollowerId == followerId)
-            .Filter("is_active", Constants.Operator.Equals, true)
+            .Where(s => s.FollowerId == followerId && s.IsActive)
             .Set(s => s.IsActive, false)
             .Update();
 

@@ -2,7 +2,6 @@ using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using PolymtkCp.Models;
 using PolymtkCp.Services.Secrets;
-using Supabase.Postgrest;
 
 namespace PolymtkCp.Services.Executor;
 
@@ -33,12 +32,16 @@ public sealed class ExecutorSecretReader
 
     public async Task<PolymarketCredentials?> GetActiveAsync(Guid followerId, CancellationToken ct = default)
     {
-        var active = await _supabase
+        // See FollowerSecretStore.GetStatusAsync: typed Where on the bool
+        // column avoids the SDK boolean-filter quirk that causes Single()
+        // to silently return null when the filter doesn't apply.
+        var rows = await _supabase
             .From<FollowerSecret>()
-            .Where(s => s.FollowerId == followerId)
-            .Filter("is_active", Constants.Operator.Equals, true)
-            .Single();
+            .Where(s => s.FollowerId == followerId && s.IsActive)
+            .Limit(1)
+            .Get(ct);
 
+        var active = rows.Models.FirstOrDefault();
         if (active is null) return null;
 
         try
