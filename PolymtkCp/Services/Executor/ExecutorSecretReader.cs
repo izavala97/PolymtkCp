@@ -32,16 +32,16 @@ public sealed class ExecutorSecretReader
 
     public async Task<PolymarketCredentials?> GetActiveAsync(Guid followerId, CancellationToken ct = default)
     {
-        // See FollowerSecretStore.GetStatusAsync: typed Where on the bool
-        // column avoids the SDK boolean-filter quirk that causes Single()
-        // to silently return null when the filter doesn't apply.
+        // Filter is_active client-side; see FollowerSecretStore for context on the
+        // SDK boolean-serialization quirk this works around.
         var rows = await _supabase
             .From<FollowerSecret>()
-            .Where(s => s.FollowerId == followerId && s.IsActive)
-            .Limit(1)
+            .Where(s => s.FollowerId == followerId)
+            .Order(s => s.Version, Supabase.Postgrest.Constants.Ordering.Descending)
+            .Limit(20)
             .Get(ct);
 
-        var active = rows.Models.FirstOrDefault();
+        var active = rows.Models.FirstOrDefault(r => r.IsActive);
         if (active is null) return null;
 
         try

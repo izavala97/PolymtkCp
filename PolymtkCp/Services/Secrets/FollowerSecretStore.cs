@@ -35,18 +35,21 @@ public sealed class FollowerSecretStore : IFollowerSecretStore
 
     public async Task<FollowerSecretStatus> GetStatusAsync(Guid followerId, CancellationToken ct = default)
     {
-        // Use typed Where on the boolean column (the string-based
-        // Filter("is_active", Equals, true) does not always serialize the
-        // boolean correctly in the Supabase SDK, which causes .Single() to
-        // see >1 row and silently return null — making the UI report
-        // "Not configured" even when an active row exists).
+        // Pull all rows for this follower and pick the active one in-memory.
+        // Earlier attempts with server-side boolean filters (both string-based
+        // Filter("is_active", Equals, true) and typed Where(s => s.IsActive))
+        // silently returned 0 rows under PostgREST + this SDK version,
+        // making the UI report "Not configured" even when an active row exists.
+        // The set is tiny (one row per credential version), so client-side filter
+        // is the simplest correct option.
         var rows = await _supabase
             .From<FollowerSecret>()
-            .Where(s => s.FollowerId == followerId && s.IsActive)
-            .Limit(1)
+            .Where(s => s.FollowerId == followerId)
+            .Order(s => s.Version, Constants.Ordering.Descending)
+            .Limit(20)
             .Get(ct);
 
-        var active = rows.Models.FirstOrDefault();
+        var active = rows.Models.FirstOrDefault(r => r.IsActive);
         if (active is null)
             return new FollowerSecretStatus(false, null, null, false);
 
@@ -116,13 +119,16 @@ public sealed class FollowerSecretStore : IFollowerSecretStore
 
     public async Task<PolymarketCredentials?> GetActiveAsync(Guid followerId, CancellationToken ct = default)
     {
+        // Same pattern as GetStatusAsync — client-side filter to dodge SDK
+        // boolean-serialization quirks.
         var rows = await _supabase
             .From<FollowerSecret>()
-            .Where(s => s.FollowerId == followerId && s.IsActive)
-            .Limit(1)
+            .Where(s => s.FollowerId == followerId)
+            .Order(s => s.Version, Constants.Ordering.Descending)
+            .Limit(20)
             .Get(ct);
 
-        var active = rows.Models.FirstOrDefault();
+        var active = rows.Models.FirstOrDefault(r => r.IsActive);
         if (active is null) return null;
 
         try
@@ -141,11 +147,23 @@ public sealed class FollowerSecretStore : IFollowerSecretStore
 
     public async Task ClearAsync(Guid followerId, CancellationToken ct = default)
     {
-        await _supabase
+        // Find active rows client-side, then update them by primary key.
+        // Avoids the SDK boolean-filter quirk that has plagued GetStatusAsync.
+        var rows = await _supabase
             .From<FollowerSecret>()
-            .Where(s => s.FollowerId == followerId && s.IsActive)
-            .Set(s => s.IsActive, false)
-            .Update();
+            .Where(s => s.FollowerId == followerId)
+            .Order(s => s.Version, Constants.Ordering.Descending)
+            .Limit(20)
+            .Get(ct);
+
+        foreach (var row in rows.Models.Where(r => r.IsActive))
+        {
+            await _supabase
+                .From<FollowerSecret>()
+                .Where(s => s.Id == row.Id)
+                .Set(s => s.IsActive, false)
+                .Update();
+        }
 
         _logger.LogInformation("Cleared active Polymarket credentials for follower {FollowerId}.", followerId);
     }
