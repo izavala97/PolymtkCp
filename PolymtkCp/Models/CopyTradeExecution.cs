@@ -20,7 +20,7 @@ public class CopyTradeExecution : BaseModel
     [Column("follower_id")]
     public Guid FollowerId { get; set; }
 
-    /// <summary>"paper" (phase 1) or "real" (phase 2).</summary>
+    /// <summary>"paper" (simulated) or "real" (submitted to the CLOB).</summary>
     [Column("mode")]
     public string Mode { get; set; } = "paper";
 
@@ -84,7 +84,7 @@ public class CopyTradeExecution : BaseModel
     [Column("reason")]
     public string? Reason { get; set; }
 
-    /// <summary>When the order was actually placed (phase 2). Null for paper trades.</summary>
+    /// <summary>When the order was actually placed on the CLOB. Null for paper trades.</summary>
     [Column("executed_at")]
     public DateTime? ExecutedAt { get; set; }
 

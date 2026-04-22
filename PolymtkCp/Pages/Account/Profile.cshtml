@@ -111,12 +111,10 @@
 
         <h5 class="mb-1">Polymarket CLOB L2 API credentials</h5>
         <p class="text-muted small mb-2">
-            The phase-2 executor signs orders with a 3-part HMAC credential issued by
+            Real-mode orders are signed with a 3-part HMAC credential issued by
             the Polymarket order book (CLOB): <code>POLY_API_KEY</code>,
             <code>POLY_API_SECRET</code>, and <code>POLY_PASSPHRASE</code>.
             Stored encrypted via ASP.NET Data Protection (KEK in Azure Key Vault).
-            <strong>The watcher does not place orders yet</strong> — credentials are
-            saved now so the executor can use them when it ships.
         </p>
         <div class="alert alert-warning small py-2 mb-2">
             <strong>These are not the same as:</strong>

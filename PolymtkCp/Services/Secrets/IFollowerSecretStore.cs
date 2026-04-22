@@ -3,14 +3,14 @@ namespace PolymtkCp.Services.Secrets;
 /// <summary>
 /// Status of the active credentials row for the current Follower. Returned
 /// by the store so UI can render "Configured (v N, set &lt;date&gt;)" and
-/// reason about phase-2 readiness without ever exposing decrypted material
+/// reason about Real-mode readiness without ever exposing decrypted material
 /// to the page.
 /// </summary>
 /// <param name="HasPrivateKey">
 /// True only when the active row decrypts to a credentials record that includes
 /// a non-empty <see cref="PolymarketCredentials.PrivateKey"/>. The Real mode
-/// of a CopyPlan requires this. Pre-phase-2 rows (saved before the wallet key
-/// was collected) are <c>HasActive = true</c> but <c>HasPrivateKey = false</c>.
+/// of a CopyPlan requires this. Rows saved before the wallet key was collected
+/// are <c>HasActive = true</c> but <c>HasPrivateKey = false</c>.
 /// </param>
 public sealed record FollowerSecretStatus(
     bool HasActive,
@@ -31,7 +31,7 @@ public interface IFollowerSecretStore
 
     /// <summary>
     /// Decrypts the currently active row. Returns null if no active row.
-    /// Phase-2 executor only — UI should never call this.
+    /// Executor only — UI should never call this.
     /// </summary>
     Task<PolymarketCredentials?> GetActiveAsync(Guid followerId, CancellationToken ct = default);
 

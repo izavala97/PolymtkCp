@@ -21,7 +21,7 @@ public class CopyPlan : BaseModel
     [Column("trader_id")]
     public Guid TraderId { get; set; }
 
-    /// <summary>"paper" (simulated only) or "real" (phase 2: submit to CLOB).</summary>
+    /// <summary>"paper" (simulated only) or "real" (orders submitted to the CLOB).</summary>
     [Column("mode")]
     public string Mode { get; set; } = "paper";
 

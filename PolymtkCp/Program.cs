@@ -264,6 +264,21 @@ app.Use(async (ctx, next) =>
     h["Referrer-Policy"]        = "strict-origin-when-cross-origin";
     h["X-Frame-Options"]        = "DENY";
     h["Permissions-Policy"]     = "geolocation=(), microphone=(), camera=()";
+    // CSP: lock down to same-origin for everything; allow Bootstrap/jQuery's
+    // inline event handlers + the Chart.js CDN we load on /Index. 'unsafe-inline'
+    // is required for the existing Razor scaffold (Bootstrap data attributes,
+    // small inline script blocks). If we ever go nonce-based, this is where
+    // it gets tightened.
+    h["Content-Security-Policy"] =
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data:; " +
+        "font-src 'self' data:; " +
+        "connect-src 'self'; " +
+        "frame-ancestors 'none'; " +
+        "base-uri 'self'; " +
+        "form-action 'self'";
     await next();
 });
 

@@ -9,10 +9,11 @@ namespace PolymtkCp.Services.Watcher;
 /// <summary>
 /// Polls every active CopyPlan's Trader on Polymarket's public Data API,
 /// detects new trades, scales them per the plan's sizing/limits, and writes
-/// rows to <c>copy_trade_executions</c>. Phase 1: every emitted row has
-/// <c>mode = "paper"</c> and either <c>status = "simulated"</c> or
-/// <c>status = "skipped"</c> (with a reason). The phase-2 executor will
-/// later pick up real-mode plans and submit orders to the CLOB.
+/// rows to <c>copy_trade_executions</c>. For paper-mode plans, rows are
+/// written as <c>mode='paper', status='simulated'</c> (or <c>'skipped'</c>
+/// with a reason). For real-mode plans, rows are written as
+/// <c>mode='real', status='pending'</c> for the <see cref="PolymtkCp.Services.Executor.OrderExecutor"/>
+/// to pick up and submit to the CLOB.
 /// </summary>
 public sealed class TraderWatcher : BackgroundService
 {

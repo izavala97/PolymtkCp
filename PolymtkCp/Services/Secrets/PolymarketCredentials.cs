@@ -1,7 +1,7 @@
 namespace PolymtkCp.Services.Secrets;
 
 /// <summary>
-/// Polymarket credentials supplied by a Follower for the phase-2 executor.
+/// Polymarket credentials supplied by a Follower for the <see cref="PolymtkCp.Services.Executor.OrderExecutor"/>.
 ///
 /// <list type="bullet">
 ///   <item>L2 HMAC triple (<c>ApiKey</c> / <c>Secret</c> / <c>Passphrase</c>) — authenticates the HTTP request.</item>
@@ -18,7 +18,7 @@ namespace PolymtkCp.Services.Secrets;
 /// Never logged; never returned to the browser.
 ///
 /// <para>All fields after <c>Passphrase</c> are nullable / defaulted so older rows
-/// that were saved before phase-2 still deserialize cleanly.</para>
+/// saved before the wallet key was collected still deserialize cleanly.</para>
 /// </summary>
 public sealed record PolymarketCredentials(
     string ApiKey,

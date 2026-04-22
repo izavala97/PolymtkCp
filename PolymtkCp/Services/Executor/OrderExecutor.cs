@@ -16,11 +16,6 @@ namespace PolymtkCp.Services.Executor;
 /// <para>Like the watcher, this runs only when the Supabase service-role
 /// key is configured — it needs to read every Follower's pending rows and
 /// write back execution outcomes across all rows (RLS-bypass territory).</para>
-///
-/// <para>The CLOB EIP-712 signing implementation is still TODO (see
-/// <see cref="PolymarketClobClient"/>); until that lands, every pending
-/// row gracefully transitions to <c>failed</c> with a clear reason rather
-/// than being silently dropped.</para>
 /// </summary>
 public sealed class OrderExecutor : BackgroundService
 {
